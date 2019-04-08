@@ -44,7 +44,7 @@ struct MyState {
 }
 
 fn main() -> Result<(), Box<std::error::Error>> {
-    let addr = env::args().nth(1).unwrap_or("127.0.0.1:8880".to_string());
+    let addr = env::args().nth(1).unwrap_or_else(|| "127.0.0.1:8880".to_string());
     let addr = addr.parse::<SocketAddr>()?;
 
     let state = MyState { counter: 0 };

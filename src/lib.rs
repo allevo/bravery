@@ -96,9 +96,9 @@ impl<T: Clone> Decoder for Http<T> {
         let request = Request {
             method: method.unwrap().to_string(),
             path: path.unwrap().to_string(),
-            headers: headers,
-            content_type: content_type,
-            content_length: content_length,
+            headers,
+            content_type,
+            content_length,
             body: buf.split_to(header_lenght),
             context: self.context.clone()
         };
@@ -142,7 +142,7 @@ impl<T: 'static +  Clone + Send + Sync> App<T> {
     pub fn new_with_state(context: T) -> App<T> {
         App {
             router: HashMap::new(),
-            context: context
+            context
         }
     }
 
@@ -197,7 +197,7 @@ fn resolve<T: Clone>(app: Arc<App<T>>, request: Request<T>) -> impl Future<Item=
         if matched_router.method != *method || matched_router.s != *path || !matched_router.regex.is_match(path) {
             continue
         }
-        let func = (*app).router.get(matched_router).unwrap();
+        let func = &(*app).router[matched_router];
 
         return future::ok(func.invoke(request));
     }
