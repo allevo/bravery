@@ -19,3 +19,4 @@ script:
   - cargo clippy --all-targets --all-features -- -D warnings
   # run tests
   - cargo test
+  - cargo build --examples
