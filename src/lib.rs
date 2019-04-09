@@ -129,8 +129,19 @@ impl Hash for MatchedRouter {
     }
 }
 
+pub struct HttpError {}
+
+impl std::fmt::Debug for HttpError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "HTTPError"
+        )
+    }
+}
+
 pub trait Handler<T: Clone> {
-    fn invoke(&self, req: Request<T>) -> Response;
+    fn invoke(&self, req: Request<T>) -> Result<Response, HttpError>;
 }
 
 pub struct App<T> {
@@ -199,7 +210,7 @@ fn resolve<T: Clone>(app: Arc<App<T>>, request: Request<T>) -> impl Future<Item=
         }
         let func = &(*app).router[matched_router];
 
-        return future::ok(func.invoke(request));
+        return future::ok(func.invoke(request).unwrap());
     }
 
     // 404

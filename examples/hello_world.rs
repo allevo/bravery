@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::env;
 
-use bravery::{Handler, Request, Response, App, EmptyState};
+use bravery::{Handler, Request, Response, App, EmptyState, HttpError};
 use std::collections::HashMap;
 
 extern crate serde;
@@ -14,21 +14,25 @@ struct JsonStruct<'a> {
   message: &'a str
 }
 
+fn json_error(_err: serde_json::Error) -> HttpError {
+    HttpError {}
+}
+
 struct TestHandler {}
 impl Handler<EmptyState> for TestHandler {
-    fn invoke(&self, _req: Request<EmptyState>) -> Response {
+    fn invoke(&self, _req: Request<EmptyState>) -> Result<Response, HttpError> {
         let json = JsonStruct {
             message: "Hello, World!"
         };
 
-        let val = serde_json::to_string(&json).unwrap();
+        let val = serde_json::to_string(&json).map_err(json_error)?;
 
-        Response {
+        Ok(Response {
             status_code: 200,
             content_type: Some("application/json".to_string()),
             body: val,
             headers: HashMap::new()
-        }
+        })
     }
 }
 
