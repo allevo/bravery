@@ -129,7 +129,9 @@ impl Hash for MatchedRouter {
     }
 }
 
-pub struct HttpError {}
+pub struct HttpError {
+    pub error_message: String
+}
 
 impl std::fmt::Debug for HttpError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -239,6 +241,15 @@ impl<T: Clone> Encoder for Http<T> {
         buf.extend_from_slice(output.as_bytes());
         Ok(())
     }
+}
+
+pub fn error_500<E>(s: &'static str) -> impl Fn(E) -> HttpError {
+    let r = move |_e: E| -> HttpError {
+        HttpError {
+            error_message: s.to_string()
+        }
+    };
+    return r;
 }
 
 #[derive(Clone)]

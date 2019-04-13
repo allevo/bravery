@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use std::env;
 
 use std::sync::MutexGuard;
-use bravery::{Handler, Request, Response, App, HttpError};
+use bravery::{Handler, Request, Response, App, HttpError, error_500};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 
@@ -23,10 +23,10 @@ struct TestHandler {
 }
 impl Handler<Arc<Mutex<MyState>>> for TestHandler {
     fn invoke(&self, req: Request<Arc<Mutex<MyState>>>) -> Result<Response, HttpError> {
-        let mut my_state: MutexGuard<MyState> = req.context.lock().unwrap();
+        let mut my_state: MutexGuard<MyState> = req.context.lock().map_err(error_500("Cannot unwrap"))?;
         my_state.counter += 1;
 
-        let mut g = self.other_counter.lock().unwrap();
+        let mut g = self.other_counter.lock().map_err(error_500("Cannot unwrap"))?;
         *g += 1;
 
         let json = JsonStruct {
@@ -35,7 +35,7 @@ impl Handler<Arc<Mutex<MyState>>> for TestHandler {
             other_counter: *g
         };
 
-        let val = serde_json::to_string(&json).unwrap();
+        let val = serde_json::to_string(&json).map_err(error_500("Unable to serialize"))?;
 
         Ok(Response {
             status_code: 200,
