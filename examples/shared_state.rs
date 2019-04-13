@@ -14,18 +14,25 @@ extern crate serde_json;
 #[derive(Serialize)]
 struct JsonStruct<'a> {
   message: &'a str,
-  counter: u32
+  counter: u32,
+  other_counter: u32
 }
 
-struct TestHandler {}
+struct TestHandler {
+    other_counter: Mutex<u32>
+}
 impl Handler<Arc<Mutex<MyState>>> for TestHandler {
     fn invoke(&self, req: Request<Arc<Mutex<MyState>>>) -> Result<Response, HttpError> {
         let mut my_state: MutexGuard<MyState> = req.context.lock().unwrap();
         my_state.counter += 1;
 
+        let mut g = self.other_counter.lock().unwrap();
+        *g += 1;
+
         let json = JsonStruct {
             message: "Hello, World!",
-            counter: my_state.counter
+            counter: my_state.counter,
+            other_counter: *g
         };
 
         let val = serde_json::to_string(&json).unwrap();
@@ -51,7 +58,7 @@ fn main() -> Result<(), Box<std::error::Error>> {
     let state = Arc::new(Mutex::new(state));
 
     let mut app = App::new_with_state(state);
-    app.get("/", Box::new(TestHandler {}));
+    app.get("/", Box::new(TestHandler { other_counter: Mutex::new(0) }));
 
     app.run(addr)?;
 
