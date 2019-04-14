@@ -101,7 +101,7 @@ impl<T: 'static +  Clone + Send + Sync> App<T> {
             .for_each(move |socket| {
                 let http: Http<T> = Http {
                     with_headers: false,
-                    with_query_string: false,
+                    with_query_string: true,
                     context: app.context.clone()
                 };
                 let framed = Framed::new(socket, http);

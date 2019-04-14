@@ -18,4 +18,10 @@ impl<C: Clone> Request<C> {
     {
         serde_json::from_slice(&self.body)
     }
+
+    pub fn params_as<'a, T>(&'a self) -> Result<T, serde::de::value::Error>
+        where T: serde::de::Deserialize<'a>
+    {
+        serde_urlencoded::from_str(&self.params)
+    }
 }
