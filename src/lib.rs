@@ -71,12 +71,7 @@ impl<T: Clone> Decoder for Http<T> {
         let index = url.find('?').or(Some(url.len())).unwrap();
 
         let path = &url[..index];
-
-        let mut params = "";
-        if self.with_query_string && index < url.len() {
-            params = &url[(index + 1)..];
-        }
-
+        let params = if self.with_query_string && index < url.len() { &url[(index + 1)..] } else { "" };
 
         let with_headers = self.with_headers;
 
