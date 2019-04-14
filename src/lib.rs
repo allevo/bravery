@@ -140,7 +140,8 @@ impl Hash for MatchedRouter {
 }
 
 pub struct HttpError {
-    pub error_message: String
+    status_code: u16,
+    error_message: String
 }
 
 impl std::fmt::Debug for HttpError {
@@ -220,26 +221,40 @@ impl<T: 'static +  Clone + Send + Sync> App<T> {
     }
 }
 
+struct HandlerFor404 {}
+impl<T: Clone> Handler<T> for HandlerFor404 {
+    fn invoke(&self, _req: Request<T>) -> Result<Response, HttpError> {
+        Ok(Response {
+            status_code: 404,
+            content_type: Some("text/html".to_string()),
+            body: "404 Handler".to_string(),
+            headers: HashMap::new()
+        })
+    }
+}
+
 fn resolve<T: Clone>(app: Arc<App<T>>, request: Request<T>) -> impl Future<Item=Response, Error=io::Error> + Send {
     let method = &request.method;
     let path = &request.path;
 
-    for matched_router in (*app).router.keys() {
-        if matched_router.method != *method || matched_router.s != *path || !matched_router.regex.is_match(path) {
-            continue
-        }
-        let func = &(*app).router[matched_router];
+    let not_found: Box<Handler<T> + Send + Sync> = Box::new(HandlerFor404 {});
+    let matched_router = (*app).router.keys().find(|matched_router| {
+        matched_router.method == *method && matched_router.s == *path && matched_router.regex.is_match(path)
+    });
 
-        return future::ok(func.invoke(request).unwrap());
-    }
+    let func = match matched_router {
+        None => &not_found,
+        Some(f) => &(*app).router[f]
+    };
 
-    // 404
-    future::ok(Response {
-        status_code: 404,
-        content_type: Some("text/html".to_string()),
-        body: "".to_string(),
-        headers: HashMap::new()
-    })
+    future::ok::<Response, io::Error>(func.invoke(request).or_else(|e: HttpError| {
+        Ok::<Response, io::Error>(Response {
+            status_code: e.status_code,
+            content_type: Some("text/html".to_string()),
+            body: e.error_message,
+            headers: HashMap::new()
+        })
+    }).unwrap())
 }
 
 impl<T: Clone> Encoder for Http<T> {
@@ -264,6 +279,16 @@ impl<T: Clone> Encoder for Http<T> {
 pub fn error_500<E>(s: &'static str) -> impl Fn(E) -> HttpError {
     move |_e: E| -> HttpError {
         HttpError {
+            status_code: 500,
+            error_message: s.to_string()
+        }
+    }
+}
+
+pub fn error_400<E>(s: &'static str) -> impl Fn(E) -> HttpError {
+    move |_e: E| -> HttpError {
+        HttpError {
+            status_code: 400,
             error_message: s.to_string()
         }
     }
