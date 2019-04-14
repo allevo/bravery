@@ -68,7 +68,7 @@ impl<T: Clone> Decoder for Http<T> {
         let method = req.method.unwrap();
         let url = req.path.unwrap();
 
-        let index = url.find('?').or(Some(url.len())).unwrap();
+        let index = url.find('?').or_else(|| Some(url.len())).unwrap();
 
         let path = &url[..index];
         let params = if self.with_query_string && index < url.len() { &url[(index + 1)..] } else { "" };
