@@ -65,6 +65,25 @@ pub struct App<T> {
     context: T
 }
 
+impl Default for App<EmptyState> {
+    fn default() -> App<EmptyState> {
+        App {
+            router: HashMap::new(),
+            context: EmptyState {}
+        }
+    }
+}
+/*
+impl App<EmptyState> {
+    pub fn new() -> App<EmptyState> {
+        App {
+            router: HashMap::new(),
+            context: EmptyState {}
+        }
+    }
+}
+*/
+
 impl<T: 'static +  Clone + Send + Sync> App<T> {
     pub fn new_with_state(context: T) -> App<T> {
         App {
@@ -180,3 +199,67 @@ pub fn error_400<E>(s: &'static str) -> impl Fn(E) -> HttpError {
 
 #[derive(Clone)]
 pub struct EmptyState;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct MyHandler {}
+    impl<T: Clone> Handler<T> for MyHandler {
+        fn invoke(&self, _req: Request<T>) -> Result<Response, HttpError> {
+            Ok(Response {
+                status_code: 200,
+                content_type: Some("text/html".to_string()),
+                body: "MyHandler".to_string(),
+                headers: HashMap::new()
+            })
+        }
+    }
+
+    fn get_app<T: 'static>(t: T) -> App<T>
+        where T: Send + Sync + Clone
+    {
+        let mut app = App::new_with_state(t);
+        app.get("/", Box::new(MyHandler {}));
+        app
+    }
+
+    #[test]
+    fn dispatch_request_200() {
+        let app = get_app(0);
+
+        let request = Request {
+            path: "/".to_string(),
+            method: "GET".to_string(),
+            content_length: 0,
+            content_type: None,
+            header_lenght: 0,
+            params: "".to_string(),
+            headers: HashMap::new(),
+            body: b"".to_vec(),
+            context: 0,
+        };
+        let response = resolve(Arc::new(app), request).wait().unwrap();
+
+        assert_eq!(response.status_code, 200);
+    }
+
+    #[test]
+    fn dispatch_request_404() {
+        let app = get_app(0);
+        let request = Request {
+            path: "/unknwon-path".to_string(),
+            method: "GET".to_string(),
+            content_length: 0,
+            content_type: None,
+            header_lenght: 0,
+            params: "".to_string(),
+            headers: HashMap::new(),
+            body: b"".to_vec(),
+            context: 0,
+        };
+        let response = resolve(Arc::new(app), request).wait().unwrap();
+
+        assert_eq!(response.status_code, 404);
+    }
+}

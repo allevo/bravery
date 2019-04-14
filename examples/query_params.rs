@@ -42,7 +42,7 @@ fn main() -> Result<(), Box<std::error::Error>> {
     let addr = env::args().nth(1).unwrap_or_else(|| "127.0.0.1:8880".to_string());
     let addr = addr.parse::<SocketAddr>()?;
 
-    let mut app = App::new_with_state(EmptyState);
+    let mut app: App<EmptyState> = Default::default();
     app.get("/", Box::new(TestHandler {}));
 
     app.run(addr)?;
