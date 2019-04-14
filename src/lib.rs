@@ -23,6 +23,7 @@ struct Http<T> {
 pub struct Request<T: Clone> {
     pub method: String,
     pub path: String,
+    pub params: String,
     pub headers: HashMap<String, String>,
     pub content_type: Option<String>,
     pub content_length: usize,
@@ -52,8 +53,6 @@ impl<T: Clone> Decoder for Http<T> {
     type Error = io::Error;
 
     fn decode(&mut self, buf: &mut BytesMut) -> io::Result<Option<Request<T>>> {
-        // println!("decode {:?}", buf);
-
         let mut headers = [httparse::EMPTY_HEADER; 16];
         let mut req = httparse::Request::new(&mut headers);
         let headers = req.parse(buf).unwrap();
@@ -66,8 +65,18 @@ impl<T: Clone> Decoder for Http<T> {
             return Ok(None);
         }
 
-        let method = req.method;
-        let path = req.path;
+        let method = req.method.unwrap();
+        let url = req.path.unwrap();
+
+        let index = url.find('?').or(Some(url.len())).unwrap();
+
+        let path = &url[..index];
+
+        let mut params = "";
+        if self.with_query_string && index < url.len() {
+            params = &url[(index + 1)..];
+        }
+
 
         let with_headers = self.with_headers;
 
@@ -99,13 +108,10 @@ impl<T: Clone> Decoder for Http<T> {
             }
         }
 
-        if self.with_query_string {
-            // TODO
-        }
-
         let request = Request {
-            method: method.unwrap().to_string(),
-            path: path.unwrap().to_string(),
+            method: method.to_string(),
+            path: path.to_string(),
+            params: params.to_string(),
             headers,
             content_type,
             content_length,
@@ -299,8 +305,118 @@ pub struct EmptyState;
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
+    fn http_decode_get() {
+        let mut input = BytesMut::new();
+        input.extend_from_slice(b"GET / HTTP/1.1\r\nHost: localhost:8880\r\nUser-Agent: curl/7.54.0\r\nAccept: */*\r\n\r\n");
+
+        let mut http = Http {
+            with_headers: false,
+            with_query_string: false,
+            context: 0,
+        };
+        let request = http.decode(&mut input);
+
+        assert!(request.is_ok());
+        let request = request.unwrap().unwrap();
+
+        assert_eq!(request.path, "/");
+        assert_eq!(request.method, "GET");
+        assert_eq!(request.content_length, 0);
+        assert_eq!(request.content_type, None);
+        assert_eq!(request.headers, HashMap::new());
+        assert_eq!(request.body, b"");
+        assert_eq!(request.context, 0);
+
+        let empty_vec: Vec<u8> = Vec::new();
+        assert_eq!(input.to_vec(), empty_vec);
+    }
+
+    #[test]
+    fn http_decode_post() {
+        let mut input = BytesMut::new();
+        input.extend_from_slice(b"POST / HTTP/1.1\r\nHost: localhost:8880\r\nUser-Agent: curl/7.54.0\r\nAccept: */*\r\nContent-type: application/json\r\nContent-Length: 16\r\n\r\n{\"message\":\"aa\"}");
+
+        let mut http = Http {
+            with_headers: false,
+            with_query_string: false,
+            context: 0,
+        };
+        let request = http.decode(&mut input);
+
+        assert!(request.is_ok());
+        let request = request.unwrap().unwrap();
+
+        assert_eq!(request.path, "/");
+        assert_eq!(request.method, "POST");
+        assert_eq!(request.content_length, 16);
+        assert_eq!(request.content_type, Some("application/json".to_string()));
+        assert_eq!(request.headers, HashMap::new());
+        assert_eq!(request.body, b"{\"message\":\"aa\"}");
+        assert_eq!(request.context, 0);
+
+        let empty_vec: Vec<u8> = Vec::new();
+        assert_eq!(input.to_vec(), empty_vec);
+    }
+
+    #[test]
+    fn http_decode_get_with_headers() {
+        let mut input = BytesMut::new();
+        input.extend_from_slice(b"GET / HTTP/1.1\r\nHost: localhost:8880\r\nUser-Agent: curl/7.54.0\r\nAccept: */*\r\n\r\n");
+
+        let mut http = Http {
+            with_headers: true,
+            with_query_string: false,
+            context: 0,
+        };
+        let request = http.decode(&mut input);
+
+        assert!(request.is_ok());
+        let request = request.unwrap().unwrap();
+
+        assert_eq!(request.path, "/");
+        assert_eq!(request.method, "GET");
+        assert_eq!(request.content_length, 0);
+        assert_eq!(request.content_type, None);
+        assert_eq!(request.headers, [
+            ("accept".to_string(), "*/*".to_string()),
+            ("host".to_string(), "localhost:8880".to_string()),
+            ("user-agent".to_string(), "curl/7.54.0".to_string())
+            ].iter().cloned().collect());
+        assert_eq!(request.body, b"");
+        assert_eq!(request.context, 0);
+
+        let empty_vec: Vec<u8> = Vec::new();
+        assert_eq!(input.to_vec(), empty_vec);
+    }
+
+    #[test]
+    fn http_decode_get_with_query_parameters() {
+        let mut input = BytesMut::new();
+        input.extend_from_slice(b"GET /?key1=value1&key2=value2 HTTP/1.1\r\nHost: localhost:8880\r\nUser-Agent: curl/7.54.0\r\nAccept: */*\r\n\r\n");
+
+        let mut http = Http {
+            with_headers: false,
+            with_query_string: true,
+            context: 0,
+        };
+        let request = http.decode(&mut input);
+
+        assert!(request.is_ok());
+        let request = request.unwrap().unwrap();
+
+        assert_eq!(request.path, "/");
+        assert_eq!(request.method, "GET");
+        assert_eq!(request.params, "key1=value1&key2=value2");
+        assert_eq!(request.content_length, 0);
+        assert_eq!(request.content_type, None);
+        assert_eq!(request.headers, HashMap::new());
+        assert_eq!(request.body, b"");
+        assert_eq!(request.context, 0);
+
+        let empty_vec: Vec<u8> = Vec::new();
+        assert_eq!(input.to_vec(), empty_vec);
     }
 }
