@@ -25,8 +25,9 @@ pub struct Request<T: Clone> {
     pub path: String,
     pub headers: HashMap<String, String>,
     pub content_type: Option<String>,
-    pub content_length: Option<u32>,
-    pub body: BytesMut,
+    pub content_length: usize,
+    pub header_lenght: usize,
+    body: Vec<u8>,
     pub context: T
 }
 pub struct Response {
@@ -34,6 +35,16 @@ pub struct Response {
     pub headers: HashMap<String, String>,
     pub content_type: Option<String>,
     pub body: String
+}
+
+use std::str;
+
+impl<C: Clone> Request<C> {
+    pub fn body_as<'a, T>(&'a self) -> serde_json::Result<T>
+        where T: serde::de::Deserialize<'a>
+    {
+        serde_json::from_slice(&self.body)
+    }
 }
 
 impl<T: Clone> Decoder for Http<T> {
@@ -46,7 +57,6 @@ impl<T: Clone> Decoder for Http<T> {
         let mut headers = [httparse::EMPTY_HEADER; 16];
         let mut req = httparse::Request::new(&mut headers);
         let headers = req.parse(buf).unwrap();
-
 
         let header_lenght = match headers {
             Complete(hl) => hl,
@@ -64,7 +74,7 @@ impl<T: Clone> Decoder for Http<T> {
         let content_type_header_name = "content-type";
         let content_length_header_name = "content-length";
 
-        let mut content_length = None;
+        let mut content_length = 0;
         let mut content_type = None;
         let mut c: u8 = 0;
         let mut headers: HashMap<String, String> = HashMap::new();
@@ -76,7 +86,7 @@ impl<T: Clone> Decoder for Http<T> {
                 content_type = Some(header_value.to_string());
                 c += 1;
             } else if header_name == content_length_header_name {
-                content_length = Some(header_value.parse::<u32>().unwrap());
+                content_length = header_value.parse::<usize>().unwrap();
                 c += 1;
             }
 
@@ -90,7 +100,7 @@ impl<T: Clone> Decoder for Http<T> {
         }
 
         if self.with_query_string {
-
+            // TODO
         }
 
         let request = Request {
@@ -99,14 +109,14 @@ impl<T: Clone> Decoder for Http<T> {
             headers,
             content_type,
             content_length,
-            body: buf.split_to(header_lenght),
+            header_lenght,
+            body: buf.split_to(header_lenght + content_length)[header_lenght..].to_vec(),
             context: self.context.clone()
         };
 
         Ok(Some(request))
     }
 }
-
 
 #[derive(Debug)]
 struct MatchedRouter {
@@ -162,6 +172,14 @@ impl<T: 'static +  Clone + Send + Sync> App<T> {
     pub fn get(self: &mut App<T>, path: &str, handler: Box<Handler<T> + Send + Sync>) {
         self.router.insert(MatchedRouter {
             method: "GET".to_string(),
+            s: path.to_string(),
+            regex: Regex::new(&path.to_string()).unwrap(),
+        }, handler);
+    }
+
+    pub fn post(self: &mut App<T>, path: &str, handler: Box<Handler<T> + Send + Sync>) {
+        self.router.insert(MatchedRouter {
+            method: "POST".to_string(),
             s: path.to_string(),
             regex: Regex::new(&path.to_string()).unwrap(),
         }, handler);
@@ -244,12 +262,11 @@ impl<T: Clone> Encoder for Http<T> {
 }
 
 pub fn error_500<E>(s: &'static str) -> impl Fn(E) -> HttpError {
-    let r = move |_e: E| -> HttpError {
+    move |_e: E| -> HttpError {
         HttpError {
             error_message: s.to_string()
         }
-    };
-    return r;
+    }
 }
 
 #[derive(Clone)]
