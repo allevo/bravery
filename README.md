@@ -10,8 +10,9 @@ A fast http async web server.
 - [ ] Add logger per request
 - [ ] Write docs
 
-## Licence
+
+## License
 
 MIT
 
-This repo is highly inspired to [https://github.com/trezm/Thruster](thruster)
+This repo is highly inspired to [thruster](https://github.com/trezm/Thruster)
