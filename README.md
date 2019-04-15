@@ -2,6 +2,12 @@
 
 A fast http async web server.
 
+## License
+
+MIT
+
+This repo is highly inspired to [thruster](https://github.com/trezm/Thruster)
+
 ## TODO
 
 - [x] Share state between handler easily
@@ -9,10 +15,3 @@ A fast http async web server.
 - [ ] Routing using radix tree
 - [ ] Add logger per request
 - [ ] Write docs
-
-
-## License
-
-MIT
-
-This repo is highly inspired to [thruster](https://github.com/trezm/Thruster)
