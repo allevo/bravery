@@ -13,7 +13,8 @@ extern crate serde_json;
 struct JsonStruct<'a> {
   message: &'a str
 }
-#[derive(Deserialize)]
+
+#[derive(Serialize, Deserialize)]
 struct MyBody<'a> {
   pub message: &'a str
 }
@@ -38,14 +39,34 @@ impl Handler<EmptyState> for TestHandler {
     }
 }
 
+fn get_app() -> App<EmptyState> {
+    let mut app: App<EmptyState> = Default::default();
+    app.post("/", Box::new(TestHandler {}));
+    app
+}
+
 fn main() -> Result<(), Box<std::error::Error>> {
     let addr = env::args().nth(1).unwrap_or_else(|| "127.0.0.1:8880".to_string());
     let addr = addr.parse::<SocketAddr>()?;
 
-    let mut app: App<EmptyState> = Default::default();
-    app.post("/", Box::new(TestHandler {}));
-
-    app.run(addr)?;
+    get_app().run(addr)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn post_body() {
+        let app = get_app();
+
+        let body = serde_json::to_string(&MyBody { message: "my_message" }).unwrap();
+        let request = app.create_request("POST", "/", "", body.as_bytes().to_vec());
+        let response = app.inject(request);
+
+        assert_eq!(response.status_code, 200);
+        assert_eq!(response.body, serde_json::to_string(&JsonStruct { message: "my_message" }).unwrap());
+    }
 }

@@ -23,3 +23,19 @@ serde = "1.0.24"
 serde_json = "1.0.8"
 serde_derive = "1.0.24"
 serde_urlencoded = "0.5.4"
+
+[[example]]
+name = "hello_world"
+test = true
+
+[[example]]
+name = "post_body"
+test = true
+
+[[example]]
+name = "query_params"
+test = true
+
+[[example]]
+name = "shared_state"
+test = true

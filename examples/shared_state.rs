@@ -50,17 +50,44 @@ struct MyState {
     counter: u32
 }
 
-fn main() -> Result<(), Box<std::error::Error>> {
-    let addr = env::args().nth(1).unwrap_or_else(|| "127.0.0.1:8880".to_string());
-    let addr = addr.parse::<SocketAddr>()?;
-
+fn get_app() -> App<Arc<Mutex<MyState>>> {
     let state = MyState { counter: 0 };
     let state = Arc::new(Mutex::new(state));
 
     let mut app = App::new_with_state(state);
     app.get("/", Box::new(TestHandler { other_counter: Mutex::new(0) }));
+    app
+}
 
-    app.run(addr)?;
+fn main() -> Result<(), Box<std::error::Error>> {
+    let addr = env::args().nth(1).unwrap_or_else(|| "127.0.0.1:8880".to_string());
+    let addr = addr.parse::<SocketAddr>()?;
+
+    get_app().run(addr)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn post_body() {
+        let app = get_app();
+
+        let request = app.create_request("GET", "/", "", b"".to_vec());
+        let response = app.inject(request);
+
+        assert_eq!(response.status_code, 200);
+        let expected = JsonStruct { message: "Hello, World!", other_counter: 1, counter: 1 };
+        assert_eq!(response.body, serde_json::to_string(&expected).unwrap());
+
+        let request = app.create_request("GET", "/", "", b"".to_vec());
+        let response = app.inject(request);
+
+        assert_eq!(response.status_code, 200);
+        let expected = JsonStruct { message: "Hello, World!", other_counter: 2, counter: 2 };
+        assert_eq!(response.body, serde_json::to_string(&expected).unwrap());
+    }
 }

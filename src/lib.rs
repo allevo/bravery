@@ -73,16 +73,6 @@ impl Default for App<EmptyState> {
         }
     }
 }
-/*
-impl App<EmptyState> {
-    pub fn new() -> App<EmptyState> {
-        App {
-            router: HashMap::new(),
-            context: EmptyState {}
-        }
-    }
-}
-*/
 
 impl<T: 'static +  Clone + Send + Sync> App<T> {
     pub fn new_with_state(context: T) -> App<T> {
@@ -108,6 +98,24 @@ impl<T: 'static +  Clone + Send + Sync> App<T> {
         }, handler);
     }
 
+    pub fn inject(self: &App<T>, request: Request<T>) -> Response {
+        resolve(self, request).wait().unwrap()
+    }
+
+    pub fn create_request(self: &App<T>, method: &str, path: &str, params: &str, body: Vec<u8>) -> Request<T> {
+        Request {
+            path: path.to_string(),
+            method: method.to_string(),
+            content_length: body.len(),
+            content_type: None,
+            header_lenght: 0,
+            params: params.to_string(),
+            headers: HashMap::new(),
+            body,
+            context: self.context.clone(),
+        }
+    }
+
     pub fn run(self: App<T>, addr: SocketAddr) -> Result<(), Box<std::error::Error>> {
         let socket = TcpListener::bind(&addr)?;
         println!("Listening on: {}", addr);
@@ -130,7 +138,7 @@ impl<T: 'static +  Clone + Send + Sync> App<T> {
                 let app = app.clone();
 
                 let task = tx.send_all(rx.and_then(move |request: Request<T>| {
-                        resolve(app.clone(), request)
+                        resolve(&*app, request)
                     }))
                     .then(|_| future::ok(()));
 
@@ -155,18 +163,19 @@ impl<T: Clone> Handler<T> for HandlerFor404 {
     }
 }
 
-fn resolve<T: Clone>(app: Arc<App<T>>, request: Request<T>) -> impl Future<Item=Response, Error=io::Error> + Send {
+fn resolve<T: Clone>(app: &App<T>, request: Request<T>) -> impl Future<Item=Response, Error=io::Error> + Send {
     let method = &request.method;
     let path = &request.path;
+    let router = &app.router;
 
     let not_found: Box<Handler<T> + Send + Sync> = Box::new(HandlerFor404 {});
-    let matched_router = (*app).router.keys().find(|matched_router| {
+    let m = router.iter().find(|(matched_router, _value)| {
         matched_router.method == *method && matched_router.s == *path && matched_router.regex.is_match(path)
     });
 
-    let func = match matched_router {
+    let func = match m {
         None => &not_found,
-        Some(f) => &(*app).router[f]
+        Some((_m, f)) => f
     };
 
     future::ok::<Response, io::Error>(func.invoke(request).or_else(|e: HttpError| {
@@ -225,41 +234,15 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_request_200() {
+    fn dispatch_requests() {
         let app = get_app(0);
 
-        let request = Request {
-            path: "/".to_string(),
-            method: "GET".to_string(),
-            content_length: 0,
-            content_type: None,
-            header_lenght: 0,
-            params: "".to_string(),
-            headers: HashMap::new(),
-            body: b"".to_vec(),
-            context: 0,
-        };
-        let response = resolve(Arc::new(app), request).wait().unwrap();
-
+        let request = app.create_request("GET", "/", "", b"".to_vec());
+        let response = app.inject(request);
         assert_eq!(response.status_code, 200);
-    }
 
-    #[test]
-    fn dispatch_request_404() {
-        let app = get_app(0);
-        let request = Request {
-            path: "/unknwon-path".to_string(),
-            method: "GET".to_string(),
-            content_length: 0,
-            content_type: None,
-            header_lenght: 0,
-            params: "".to_string(),
-            headers: HashMap::new(),
-            body: b"".to_vec(),
-            context: 0,
-        };
-        let response = resolve(Arc::new(app), request).wait().unwrap();
-
+        let request = app.create_request("GET", "/unknwon-path", "", b"".to_vec());
+        let response = app.inject(request);
         assert_eq!(response.status_code, 404);
     }
 }
