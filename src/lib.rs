@@ -13,6 +13,14 @@ use std::net::SocketAddr;
 use tokio_codec::Framed;
 use std::str;
 
+#[macro_use]
+extern crate slog;
+extern crate sloggers;
+
+use sloggers::Build;
+use sloggers::terminal::{TerminalLoggerBuilder, Destination};
+use sloggers::types::Severity;
+
 pub mod request;
 pub mod response;
 pub mod http;
@@ -62,14 +70,23 @@ pub trait Handler<T: Clone> {
 
 pub struct App<T> {
     router: HashMap<MatchedRouter, Box<Handler<T> + Send + Sync>>,
-    context: T
+    context: T,
+    logger: slog::Logger
+}
+
+fn get_logger () -> slog::Logger {
+    let mut builder = TerminalLoggerBuilder::new();
+    builder.level(Severity::Debug);
+    builder.destination(Destination::Stdout);
+    builder.build().unwrap()
 }
 
 impl Default for App<EmptyState> {
     fn default() -> App<EmptyState> {
         App {
             router: HashMap::new(),
-            context: EmptyState {}
+            context: EmptyState {},
+            logger: get_logger(),
         }
     }
 }
@@ -78,7 +95,8 @@ impl<T: 'static +  Clone + Send + Sync> App<T> {
     pub fn new_with_state(context: T) -> App<T> {
         App {
             router: HashMap::new(),
-            context
+            context,
+            logger: get_logger(),
         }
     }
 
@@ -113,6 +131,7 @@ impl<T: 'static +  Clone + Send + Sync> App<T> {
             headers: HashMap::new(),
             body,
             context: self.context.clone(),
+            logger: self.logger.clone()
         }
     }
 
@@ -126,10 +145,12 @@ impl<T: 'static +  Clone + Send + Sync> App<T> {
             .incoming()
             .map_err(|e| println!("failed to accept socket; error = {:?}", e))
             .for_each(move |socket| {
+                // TODO: clone this
                 let http: Http<T> = Http {
                     with_headers: false,
                     with_query_string: true,
-                    context: app.context.clone()
+                    context: app.context.clone(),
+                    logger: app.logger.clone()
                 };
                 let framed = Framed::new(socket, http);
 

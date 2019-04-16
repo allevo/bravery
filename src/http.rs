@@ -7,10 +7,15 @@ use std::collections::HashMap;
 use crate::request::Request;
 use crate::response::Response;
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+static REQUEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
 pub struct Http<T> {
     pub with_headers: bool,
     pub with_query_string: bool,
-    pub context: T
+    pub context: T,
+    pub logger: slog::Logger
 }
 
 impl<T: Clone> Decoder for Http<T> {
@@ -77,7 +82,10 @@ impl<T: Clone> Decoder for Http<T> {
             content_length,
             header_lenght,
             body: buf.split_to(header_lenght + content_length)[header_lenght..].to_vec(),
-            context: self.context.clone()
+            context: self.context.clone(),
+            logger: slog::Logger::new(&self.logger, o!(
+                "reqId" => REQUEST_COUNTER.fetch_add(1, Ordering::SeqCst)
+            )),
         };
 
         Ok(Some(request))
@@ -107,6 +115,17 @@ impl<T: Clone> Encoder for Http<T> {
 mod tests {
     use super::*;
 
+    use sloggers::Build;
+    use sloggers::terminal::{TerminalLoggerBuilder, Destination};
+    use sloggers::types::Severity;
+
+    fn get_logger () -> slog::Logger {
+        let mut builder = TerminalLoggerBuilder::new();
+        builder.level(Severity::Debug);
+        builder.destination(Destination::Stdout);
+        builder.build().unwrap()
+    }
+
     #[test]
     fn http_decode_get() {
         let mut input = BytesMut::new();
@@ -116,6 +135,7 @@ mod tests {
             with_headers: false,
             with_query_string: false,
             context: 0,
+            logger: get_logger(),
         };
         let request = http.decode(&mut input);
 
@@ -143,6 +163,7 @@ mod tests {
             with_headers: false,
             with_query_string: false,
             context: 0,
+            logger: get_logger(),
         };
         let request = http.decode(&mut input);
 
@@ -170,6 +191,7 @@ mod tests {
             with_headers: true,
             with_query_string: false,
             context: 0,
+            logger: get_logger(),
         };
         let request = http.decode(&mut input);
 
@@ -201,6 +223,7 @@ mod tests {
             with_headers: false,
             with_query_string: true,
             context: 0,
+            logger: get_logger(),
         };
         let request = http.decode(&mut input);
 

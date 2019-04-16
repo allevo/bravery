@@ -9,7 +9,8 @@ pub struct Request<T: Clone> {
     pub content_length: usize,
     pub header_lenght: usize,
     pub body: Vec<u8>,
-    pub context: T
+    pub context: T,
+    pub logger: slog::Logger
 }
 
 impl<C: Clone> Request<C> {
