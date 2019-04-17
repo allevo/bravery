@@ -102,17 +102,17 @@ impl<T: 'static +  Clone + Send + Sync> App<T> {
 
     pub fn get(self: &mut App<T>, path: &str, handler: Box<Handler<T> + Send + Sync>) {
         self.router.insert(MatchedRouter {
-            method: "GET".to_string(),
-            s: path.to_string(),
-            regex: Regex::new(&path.to_string()).unwrap(),
+            method: "GET".to_owned(),
+            s: path.to_owned(),
+            regex: Regex::new(&path.to_owned()).unwrap(),
         }, handler);
     }
 
     pub fn post(self: &mut App<T>, path: &str, handler: Box<Handler<T> + Send + Sync>) {
         self.router.insert(MatchedRouter {
-            method: "POST".to_string(),
-            s: path.to_string(),
-            regex: Regex::new(&path.to_string()).unwrap(),
+            method: "POST".to_owned(),
+            s: path.to_owned(),
+            regex: Regex::new(&path.to_owned()).unwrap(),
         }, handler);
     }
 
@@ -122,12 +122,12 @@ impl<T: 'static +  Clone + Send + Sync> App<T> {
 
     pub fn create_request(self: &App<T>, method: &str, path: &str, params: &str, body: Vec<u8>) -> Request<T> {
         Request {
-            path: path.to_string(),
-            method: method.to_string(),
+            path: path.to_owned(),
+            method: method.to_owned(),
             content_length: body.len(),
             content_type: None,
             header_lenght: 0,
-            params: params.to_string(),
+            params: params.to_owned(),
             headers: HashMap::new(),
             body,
             context: self.context.clone(),
@@ -177,8 +177,8 @@ impl<T: Clone> Handler<T> for HandlerFor404 {
     fn invoke(&self, _req: Request<T>) -> Result<Response, HttpError> {
         Ok(Response {
             status_code: 404,
-            content_type: Some("text/html".to_string()),
-            body: "404 Handler".to_string(),
+            content_type: Some("text/html".to_owned()),
+            body: "404 Handler".to_owned(),
             headers: HashMap::new()
         })
     }
@@ -202,7 +202,7 @@ fn resolve<T: Clone>(app: &App<T>, request: Request<T>) -> impl Future<Item=Resp
     future::ok::<Response, io::Error>(func.invoke(request).or_else(|e: HttpError| {
         Ok::<Response, io::Error>(Response {
             status_code: e.status_code,
-            content_type: Some("text/html".to_string()),
+            content_type: Some("text/html".to_owned()),
             body: e.error_message,
             headers: HashMap::new()
         })
@@ -213,7 +213,7 @@ pub fn error_500<E>(s: &'static str) -> impl Fn(E) -> HttpError {
     move |_e: E| -> HttpError {
         HttpError {
             status_code: 500,
-            error_message: s.to_string()
+            error_message: s.to_owned()
         }
     }
 }
@@ -222,7 +222,7 @@ pub fn error_400<E>(s: &'static str) -> impl Fn(E) -> HttpError {
     move |_e: E| -> HttpError {
         HttpError {
             status_code: 400,
-            error_message: s.to_string()
+            error_message: s.to_owned()
         }
     }
 }
@@ -239,8 +239,8 @@ mod tests {
         fn invoke(&self, _req: Request<T>) -> Result<Response, HttpError> {
             Ok(Response {
                 status_code: 200,
-                content_type: Some("text/html".to_string()),
-                body: "MyHandler".to_string(),
+                content_type: Some("text/html".to_owned()),
+                body: "MyHandler".to_owned(),
                 headers: HashMap::new()
             })
         }

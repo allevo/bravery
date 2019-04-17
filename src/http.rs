@@ -53,30 +53,33 @@ impl<T: Clone> Decoder for Http<T> {
         let mut c: u8 = 0;
         let mut headers: HashMap<String, String> = HashMap::new();
         for header in req.headers.iter() {
-            let header_name = header.name.to_string().to_lowercase();
-            let header_value = String::from_utf8_lossy(header.value).to_string();
+            let header_name = header.name.to_owned().to_lowercase();
+
+            let with_value = with_headers ||
+                header_name == content_type_header_name ||
+                header_name == content_length_header_name;
+            let header_value = if with_value { Some(String::from_utf8_lossy(header.value).to_string()) } else { None };
+            if with_headers {
+                headers.insert(header_name.clone(), header_value.clone().unwrap().clone());
+            }
 
             if header_name == content_type_header_name {
-                content_type = Some(header_value.to_string());
+                content_type = Some(header_value.unwrap().clone());
                 c += 1;
             } else if header_name == content_length_header_name {
-                content_length = header_value.parse::<usize>().unwrap();
+                content_length = header_value.unwrap().parse::<usize>().unwrap();
                 c += 1;
             }
 
             if !with_headers && c == 2 {
                 break;
             }
-
-            if with_headers {
-                headers.insert(header_name, header_value);
-            }
         }
 
         let request = Request {
-            method: method.to_string(),
-            path: path.to_string(),
-            params: params.to_string(),
+            method: method.to_owned(),
+            path: path.to_owned(),
+            params: params.to_owned(),
             headers,
             content_type,
             content_length,
@@ -173,7 +176,7 @@ mod tests {
         assert_eq!(request.path, "/");
         assert_eq!(request.method, "POST");
         assert_eq!(request.content_length, 16);
-        assert_eq!(request.content_type, Some("application/json".to_string()));
+        assert_eq!(request.content_type, Some("application/json".to_owned()));
         assert_eq!(request.headers, HashMap::new());
         assert_eq!(request.body, b"{\"message\":\"aa\"}");
         assert_eq!(request.context, 0);
@@ -203,9 +206,9 @@ mod tests {
         assert_eq!(request.content_length, 0);
         assert_eq!(request.content_type, None);
         assert_eq!(request.headers, [
-            ("accept".to_string(), "*/*".to_string()),
-            ("host".to_string(), "localhost:8880".to_string()),
-            ("user-agent".to_string(), "curl/7.54.0".to_string())
+            ("accept".to_owned(), "*/*".to_owned()),
+            ("host".to_owned(), "localhost:8880".to_owned()),
+            ("user-agent".to_owned(), "curl/7.54.0".to_owned())
             ].iter().cloned().collect());
         assert_eq!(request.body, b"");
         assert_eq!(request.context, 0);
