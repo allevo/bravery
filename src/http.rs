@@ -41,7 +41,7 @@ impl<T: Clone> Decoder for Http<T> {
         let index = url.find('?').or_else(|| Some(url.len())).unwrap();
 
         let path = &url[..index];
-        let params = if self.with_query_string && index < url.len() { &url[(index + 1)..] } else { "" };
+        let query_string = if self.with_query_string && index < url.len() { &url[(index + 1)..] } else { "" };
 
         let with_headers = self.with_headers;
 
@@ -79,7 +79,7 @@ impl<T: Clone> Decoder for Http<T> {
         let request = Request {
             method: method.to_owned(),
             path: path.to_owned(),
-            params: params.to_owned(),
+            query_string: query_string.to_owned(),
             headers,
             content_type,
             content_length,
@@ -235,7 +235,7 @@ mod tests {
 
         assert_eq!(request.path, "/");
         assert_eq!(request.method, "GET");
-        assert_eq!(request.params, "key1=value1&key2=value2");
+        assert_eq!(request.query_string, "key1=value1&key2=value2");
         assert_eq!(request.content_length, 0);
         assert_eq!(request.content_type, None);
         assert_eq!(request.headers, HashMap::new());

@@ -21,7 +21,7 @@ struct MyParams {
 struct TestHandler {}
 impl Handler<EmptyState> for TestHandler {
     fn invoke(&self, req: Request<EmptyState>) -> Result<Response, HttpError> {
-        let params: MyParams = req.params_as().map_err(error_500("Unable to deserialize query_params"))?;
+        let params: MyParams = req.query_string_as().map_err(error_500("Unable to deserialize query_params"))?;
 
         let json = JsonStruct {
             message: &params.message

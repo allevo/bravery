@@ -32,7 +32,7 @@ impl slog::Value for MyParams {
 struct TestHandler {}
 impl Handler<EmptyState> for TestHandler {
     fn invoke(&self, req: Request<EmptyState>) -> Result<Response, HttpError> {
-        let params = req.params_as::<MyParams>().unwrap();
+        let params = req.query_string_as::<MyParams>().unwrap();
         info!(req.logger, "formatted: {}", 1; "wow" => params);
         Ok(Response {
             status_code: 200,

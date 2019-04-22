@@ -120,14 +120,14 @@ impl<T: 'static +  Clone + Send + Sync> App<T> {
         resolve(self, request).wait().unwrap()
     }
 
-    pub fn create_request(self: &App<T>, method: &str, path: &str, params: &str, body: Vec<u8>) -> Request<T> {
+    pub fn create_request(self: &App<T>, method: &str, path: &str, query_string: &str, body: Vec<u8>) -> Request<T> {
         Request {
             path: path.to_owned(),
             method: method.to_owned(),
             content_length: body.len(),
             content_type: None,
             header_lenght: 0,
-            params: params.to_owned(),
+            query_string: query_string.to_owned(),
             headers: HashMap::new(),
             body,
             context: self.context.clone(),
