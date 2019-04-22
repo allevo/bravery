@@ -1,5 +1,7 @@
 extern crate tokio;
 
+use bytes::BytesMut;
+use crate::http_protocol::Parsed;
 use std::sync::{Arc};
 use regex::Regex;
 use core::hash::Hasher;
@@ -13,6 +15,8 @@ use std::net::SocketAddr;
 use tokio_codec::Framed;
 use std::str;
 
+extern crate serde_derive;
+
 #[macro_use]
 extern crate slog;
 extern crate sloggers;
@@ -24,6 +28,7 @@ use sloggers::types::Severity;
 pub mod request;
 pub mod response;
 pub mod http;
+pub mod http_protocol;
 
 pub use self::request::Request;
 pub use self::response::Response;
@@ -120,15 +125,35 @@ impl<T: 'static +  Clone + Send + Sync> App<T> {
         resolve(self, request).wait().unwrap()
     }
 
-    pub fn create_request(self: &App<T>, method: &str, path: &str, params: &str, body: Vec<u8>) -> Request<T> {
+    pub fn create_request(self: &App<T>, method: &str, path: &str, query_params: &str, body: Vec<u8>) -> Request<T> {
+        let mut http_message_headers = BytesMut::new();
+        let mut method_indexes = (0, 0);
+        let mut path_indexes = (0, 0);
+        let mut query_string_indexes = (0, 0);
+        http_message_headers.extend_from_slice(method.as_bytes());
+        method_indexes.1 = http_message_headers.len();
+        http_message_headers.extend_from_slice(b" ");
+        path_indexes.0 = http_message_headers.len();
+        http_message_headers.extend_from_slice(path.as_bytes());
+        path_indexes.1 = http_message_headers.len();
+        if !query_params.is_empty() {
+            http_message_headers.extend_from_slice(b"?");
+            query_string_indexes.0 = http_message_headers.len();
+            http_message_headers.extend_from_slice(query_params.as_bytes());
+            query_string_indexes.1 = http_message_headers.len();
+        } else {
+            query_string_indexes = (path_indexes.1, path_indexes.1);
+        }
+
         Request {
-            path: path.to_owned(),
-            method: method.to_owned(),
-            content_length: body.len(),
-            content_type: None,
-            header_lenght: 0,
-            params: params.to_owned(),
-            headers: HashMap::new(),
+            parsed: Parsed {
+                content_length: Some((0, 5)),
+                content_type: None,
+                method_indexes,
+                path_indexes,
+                query_string_indexes,
+                http_message_headers,
+            },
             body,
             context: self.context.clone(),
             logger: self.logger.clone()
@@ -185,8 +210,8 @@ impl<T: Clone> Handler<T> for HandlerFor404 {
 }
 
 fn resolve<T: Clone>(app: &App<T>, request: Request<T>) -> impl Future<Item=Response, Error=io::Error> + Send {
-    let method = &request.method;
-    let path = &request.path;
+    let method = request.get_method();
+    let path = request.get_path();
     let router = &app.router;
 
     let not_found: Box<Handler<T> + Send + Sync> = Box::new(HandlerFor404 {});
