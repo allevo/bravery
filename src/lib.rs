@@ -9,6 +9,8 @@ use tokio::io;
 use tokio::net::TcpListener;
 use tokio::prelude::*;
 
+use bravery_router::{create_root_node, find, add, optimize, Node};
+
 use std::net::SocketAddr;
 use tokio_codec::Framed;
 use std::str;
@@ -35,6 +37,8 @@ struct MatchedRouter {
     regex: Regex,
     method: String,
 }
+
+// trait MyTrait = Clone + Send + Sync;
 
 impl PartialEq for MatchedRouter {
     fn eq(&self, other: &MatchedRouter) -> bool {
@@ -69,7 +73,10 @@ pub trait Handler<T: Clone> {
 }
 
 pub struct App<T> {
-    router: HashMap<MatchedRouter, Box<Handler<T> + Send + Sync>>,
+    get_router: Node<usize>,
+    get_handlers: Vec<Box<Handler<T> + Send + Sync>>,
+    post_router: Node<usize>,
+    post_handlers: Vec<Box<Handler<T> + Send + Sync>>,
     context: T,
     logger: slog::Logger
 }
@@ -84,36 +91,36 @@ fn get_logger () -> slog::Logger {
 impl Default for App<EmptyState> {
     fn default() -> App<EmptyState> {
         App {
-            router: HashMap::new(),
+            get_router: create_root_node(),
+            get_handlers: vec![],
+            post_router: create_root_node(),
+            post_handlers: vec![],
             context: EmptyState {},
             logger: get_logger(),
         }
     }
 }
 
-impl<T: 'static +  Clone + Send + Sync> App<T> {
+impl<T: 'static + Clone + Send + Sync> App<T> {
     pub fn new_with_state(context: T) -> App<T> {
         App {
-            router: HashMap::new(),
+            get_router: create_root_node(),
+            get_handlers: vec![],
+            post_router: create_root_node(),
+            post_handlers: vec![],
             context,
             logger: get_logger(),
         }
     }
 
     pub fn get(self: &mut App<T>, path: &str, handler: Box<Handler<T> + Send + Sync>) {
-        self.router.insert(MatchedRouter {
-            method: "GET".to_owned(),
-            s: path.to_owned(),
-            regex: Regex::new(&path.to_owned()).unwrap(),
-        }, handler);
+        add(&mut self.get_router, path, self.get_handlers.len());
+        self.get_handlers.push(handler);
     }
 
     pub fn post(self: &mut App<T>, path: &str, handler: Box<Handler<T> + Send + Sync>) {
-        self.router.insert(MatchedRouter {
-            method: "POST".to_owned(),
-            s: path.to_owned(),
-            regex: Regex::new(&path.to_owned()).unwrap(),
-        }, handler);
+        add(&mut self.post_router, path, self.post_handlers.len());
+        self.post_handlers.push(handler);
     }
 
     pub fn inject(self: &App<T>, request: Request<T>) -> Response {
@@ -135,9 +142,12 @@ impl<T: 'static +  Clone + Send + Sync> App<T> {
         }
     }
 
-    pub fn run(self: App<T>, addr: SocketAddr) -> Result<(), Box<std::error::Error>> {
+    pub fn run(mut self: App<T>, addr: SocketAddr) -> Result<(), Box<std::error::Error>> {
         let socket = TcpListener::bind(&addr)?;
         println!("Listening on: {}", addr);
+
+        self.post_router = optimize(self.post_router);
+        self.get_router = optimize(self.get_router);
 
         let app = Arc::new(self);
 
@@ -187,16 +197,18 @@ impl<T: Clone> Handler<T> for HandlerFor404 {
 fn resolve<T: Clone>(app: &App<T>, request: Request<T>) -> impl Future<Item=Response, Error=io::Error> + Send {
     let method = &request.method;
     let path = &request.path;
-    let router = &app.router;
+    let (router, handlers) = match method.as_ref() {
+        "GET" => (&app.get_router, &app.get_handlers),
+        "POST" => (&app.post_router, &app.post_handlers),
+        _ => unimplemented!(),
+    };
 
     let not_found: Box<Handler<T> + Send + Sync> = Box::new(HandlerFor404 {});
-    let m = router.iter().find(|(matched_router, _value)| {
-        matched_router.method == *method && matched_router.s == *path && matched_router.regex.is_match(path)
-    });
+    let state_found = find(router, path);
 
-    let func = match m {
+    let func = match state_found.value {
         None => &not_found,
-        Some((_m, f)) => f
+        Some(f) => handlers.get(*f).unwrap()
     };
 
     future::ok::<Response, io::Error>(func.invoke(request).or_else(|e: HttpError| {
