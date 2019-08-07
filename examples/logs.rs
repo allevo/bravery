@@ -20,7 +20,7 @@ struct MyParams {
 }
 
 impl slog::Value for MyParams {
-    fn serialize(&self, _record: &slog::Record, key: slog::Key, serializer: &mut slog::Serializer) -> slog::Result {
+    fn serialize(&self, _record: &slog::Record, key: slog::Key, serializer: &mut dyn slog::Serializer) -> slog::Result {
         let msg: &str = match &self.message {
             None => "<empty>",
             Some(s) => &s[..]
@@ -49,7 +49,7 @@ fn get_app() -> App<EmptyState> {
     app
 }
 
-fn main() -> Result<(), Box<std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = env::args().nth(1).unwrap_or_else(|| "127.0.0.1:8880".to_string());
     let addr = addr.parse::<SocketAddr>()?;
 

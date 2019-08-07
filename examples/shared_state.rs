@@ -59,7 +59,7 @@ fn get_app() -> App<Arc<Mutex<MyState>>> {
     app
 }
 
-fn main() -> Result<(), Box<std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = env::args().nth(1).unwrap_or_else(|| "127.0.0.1:8880".to_string());
     let addr = addr.parse::<SocketAddr>()?;
 
