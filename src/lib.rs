@@ -74,11 +74,12 @@ pub trait Handler<T: Clone> {
 
 pub struct App<T> {
     get_router: Node<usize>,
-    get_handlers: Vec<Box<Handler<T> + Send + Sync>>,
+    get_handlers: Vec<Box<dyn Handler<T> + Send + Sync>>,
     post_router: Node<usize>,
-    post_handlers: Vec<Box<Handler<T> + Send + Sync>>,
+    post_handlers: Vec<Box<dyn Handler<T> + Send + Sync>>,
     context: T,
-    logger: slog::Logger
+    logger: slog::Logger,
+    not_found: Box<dyn Handler<T> + Send + Sync>,
 }
 
 fn get_logger () -> slog::Logger {
@@ -97,6 +98,7 @@ impl Default for App<EmptyState> {
             post_handlers: vec![],
             context: EmptyState {},
             logger: get_logger(),
+            not_found: Box::new(HandlerFor404 {}),
         }
     }
 }
@@ -110,15 +112,16 @@ impl<T: 'static + Clone + Send + Sync> App<T> {
             post_handlers: vec![],
             context,
             logger: get_logger(),
+            not_found: Box::new(HandlerFor404 {}),
         }
     }
 
-    pub fn get(self: &mut App<T>, path: &str, handler: Box<Handler<T> + Send + Sync>) {
+    pub fn get(self: &mut App<T>, path: &str, handler: Box<dyn Handler<T> + Send + Sync>) {
         add(&mut self.get_router, path, self.get_handlers.len());
         self.get_handlers.push(handler);
     }
 
-    pub fn post(self: &mut App<T>, path: &str, handler: Box<Handler<T> + Send + Sync>) {
+    pub fn post(self: &mut App<T>, path: &str, handler: Box<dyn Handler<T> + Send + Sync>) {
         add(&mut self.post_router, path, self.post_handlers.len());
         self.post_handlers.push(handler);
     }
@@ -142,7 +145,7 @@ impl<T: 'static + Clone + Send + Sync> App<T> {
         }
     }
 
-    pub fn run(mut self: App<T>, addr: SocketAddr) -> Result<(), Box<std::error::Error>> {
+    pub fn run(mut self: App<T>, addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
         let socket = TcpListener::bind(&addr)?;
         println!("Listening on: {}", addr);
 
@@ -203,11 +206,10 @@ fn resolve<T: Clone>(app: &App<T>, request: Request<T>) -> impl Future<Item=Resp
         _ => unimplemented!(),
     };
 
-    let not_found: Box<Handler<T> + Send + Sync> = Box::new(HandlerFor404 {});
     let state_found = find(router, path);
 
     let func = match state_found.value {
-        None => &not_found,
+        None => &app.not_found,
         Some(f) => handlers.get(*f).unwrap()
     };
 
