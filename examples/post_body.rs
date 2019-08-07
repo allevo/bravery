@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::env;
 
-use bravery::{Handler, Request, Response, App, EmptyState, HttpError, error_500};
+use bravery::{Handler, Request, Response, App, EmptyState, HttpError, error_500, error_400};
 use std::collections::HashMap;
 
 extern crate serde;
@@ -22,7 +22,7 @@ struct MyBody<'a> {
 struct TestHandler {}
 impl Handler<EmptyState> for TestHandler {
     fn invoke(&self, req: Request<EmptyState>) -> Result<Response, HttpError> {
-        let body: MyBody = req.body_as().map_err(error_500("Unable to deserialize body"))?;
+        let body: MyBody = req.body_as().map_err(error_400("Unable to deserialize body"))?;
 
         let json = JsonStruct {
             message: body.message
@@ -68,5 +68,21 @@ mod tests {
 
         assert_eq!(response.status_code, 200);
         assert_eq!(response.body, serde_json::to_string(&JsonStruct { message: "my_message" }).unwrap());
+    }
+
+    #[test]
+    fn post_body_400() {
+        let app = get_app();
+
+        let body = "{}";
+        let request = app.create_request("POST", "/", "", body.as_bytes().to_vec());
+        let response = app.inject(request);
+
+        assert_eq!(response.status_code, 400);
+        assert_eq!(response.body, serde_json::to_string(&HttpError {
+            status_code: 400,
+            error_message: "Unable to deserialize body".to_string(),
+            details: "missing field `message` at line 1 column 2".to_string(),
+        }).unwrap());
     }
 }

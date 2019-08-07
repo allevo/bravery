@@ -19,6 +19,9 @@ use std::str;
 extern crate slog;
 extern crate sloggers;
 
+#[macro_use]
+extern crate serde_derive;
+
 use sloggers::Build;
 use sloggers::terminal::{TerminalLoggerBuilder, Destination};
 use sloggers::types::Severity;
@@ -38,7 +41,12 @@ struct MatchedRouter {
     method: String,
 }
 
-// trait MyTrait = Clone + Send + Sync;
+#[derive(Serialize)]
+pub struct HttpError {
+    pub status_code: u16,
+    pub error_message: String,
+    pub details: String,
+}
 
 impl PartialEq for MatchedRouter {
     fn eq(&self, other: &MatchedRouter) -> bool {
@@ -52,11 +60,6 @@ impl Hash for MatchedRouter {
         self.s.hash(state);
         self.method.hash(state);
     }
-}
-
-pub struct HttpError {
-    status_code: u16,
-    error_message: String
 }
 
 impl std::fmt::Debug for HttpError {
@@ -213,11 +216,16 @@ fn resolve<T: Clone>(app: &App<T>, request: Request<T>) -> impl Future<Item=Resp
         Some(f) => handlers.get(*f).unwrap()
     };
 
-    future::ok::<Response, io::Error>(func.invoke(request).or_else(|e: HttpError| {
+    future::ok::<Response, io::Error>(func.invoke(request).or_else(|error: HttpError| {
+        let fallback: String = "Unable to serialize".to_owned();
+        let val: Result<String, _> = serde_json::to_string(&error);
+
+        let body = if val.is_ok() { val.unwrap() } else { fallback };
+
         Ok::<Response, io::Error>(Response {
-            status_code: e.status_code,
+            status_code: error.status_code,
             content_type: Some("text/html".to_owned()),
-            body: e.error_message,
+            body,
             headers: HashMap::new()
         })
     }).unwrap())
@@ -227,16 +235,19 @@ pub fn error_500<E>(s: &'static str) -> impl Fn(E) -> HttpError {
     move |_e: E| -> HttpError {
         HttpError {
             status_code: 500,
-            error_message: s.to_owned()
+            error_message: s.to_owned(),
+            details: "".to_owned(),
         }
     }
 }
 
-pub fn error_400<E>(s: &'static str) -> impl Fn(E) -> HttpError {
-    move |_e: E| -> HttpError {
+use std::string::ToString;
+pub fn error_400<Error: ToString>(s: &'static str) -> impl Fn(Error) -> HttpError {
+    move |e: Error| -> HttpError {
         HttpError {
             status_code: 400,
-            error_message: s.to_owned()
+            error_message: s.to_owned(),
+            details: e.to_string(),
         }
     }
 }

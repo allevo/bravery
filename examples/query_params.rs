@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::env;
 
-use bravery::{Handler, Request, Response, App, EmptyState, HttpError, error_500};
+use bravery::{Handler, Request, Response, App, EmptyState, HttpError, error_500, error_400};
 use std::collections::HashMap;
 
 extern crate serde;
@@ -21,7 +21,7 @@ struct MyParams {
 struct TestHandler {}
 impl Handler<EmptyState> for TestHandler {
     fn invoke(&self, req: Request<EmptyState>) -> Result<Response, HttpError> {
-        let params: MyParams = req.query_string_as().map_err(error_500("Unable to deserialize query_params"))?;
+        let params: MyParams = req.query_string_as().map_err(error_400("Unable to deserialize query_params"))?;
 
         let json = JsonStruct {
             message: &params.message
@@ -58,7 +58,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn post_body() {
+    fn get_params_200() {
         let app = get_app();
 
         let request = app.create_request("GET", "/", "message=my_message", b"".to_vec());
@@ -66,5 +66,20 @@ mod tests {
 
         assert_eq!(response.status_code, 200);
         assert_eq!(response.body, serde_json::to_string(&JsonStruct { message: "my_message" }).unwrap());
+    }
+
+    #[test]
+    fn get_params_400() {
+        let app = get_app();
+
+        let request = app.create_request("GET", "/", "", b"".to_vec());
+        let response = app.inject(request);
+
+        assert_eq!(response.status_code, 400);
+        assert_eq!(response.body, serde_json::to_string(&HttpError {
+            status_code: 400,
+            error_message: "Unable to deserialize query_params".to_string(),
+            details: "missing field `message`".to_string(),
+        }).unwrap());
     }
 }
