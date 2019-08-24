@@ -103,12 +103,18 @@ impl<T: Clone> Encoder for Http<T> {
     fn encode(&mut self, response: Response, buf: &mut BytesMut) -> io::Result<()> {
         let body = response.body;
         let len = body.len().to_string();
+        let content_type = match response.content_type {
+            Some(ct) => "\r\nContent-type: ".to_owned() + &ct,
+            None => "".to_owned(),
+        };
         let output = "HTTP/1.1 ".to_owned() + &response.status_code.to_string()[..] + " OK"
             + "\r\n"
             + "Content-length:" + &len[..]
+            + &content_type
             + "\r\n"
             + "\r\n"
             + &body[..];
+
         buf.extend_from_slice(output.as_bytes());
         Ok(())
     }

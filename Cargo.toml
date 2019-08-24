@@ -28,6 +28,10 @@ bravery_router = "0.1"
 sloggers = "0.3.2"
 slog = "2.4.1"
 
+[dev-dependencies]
+struct2swagger = { path = "../swagger/struct2swagger" }
+struct2swagger_derive = { path = "../swagger/struct2swagger_derive" }
+
 [[example]]
 name = "hello_world"
 test = true
@@ -46,4 +50,8 @@ test = true
 
 [[example]]
 name = "logs"
+test = true
+
+[[swagger]]
+name = "swagger"
 test = true
