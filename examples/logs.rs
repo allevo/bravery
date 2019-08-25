@@ -1,8 +1,7 @@
-
-use std::net::SocketAddr;
 use std::env;
+use std::net::SocketAddr;
 
-use bravery::{Handler, Request, Response, App, EmptyState, HttpError};
+use bravery::{App, EmptyState, Handler, HttpError, Request, Response};
 use std::collections::HashMap;
 
 extern crate serde;
@@ -13,20 +12,24 @@ extern crate serde_derive;
 #[macro_use]
 extern crate slog;
 
-#[derive(Debug)]
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct MyParams {
-    message: Option<String>
+    message: Option<String>,
 }
 
 impl slog::Value for MyParams {
-    fn serialize(&self, _record: &slog::Record, key: slog::Key, serializer: &mut dyn slog::Serializer) -> slog::Result {
+    fn serialize(
+        &self,
+        _record: &slog::Record,
+        key: slog::Key,
+        serializer: &mut dyn slog::Serializer,
+    ) -> slog::Result {
         let msg: &str = match &self.message {
             None => "<empty>",
-            Some(s) => &s[..]
+            Some(s) => &s[..],
         };
         serializer.emit_str(key, msg)
-   }
+    }
 }
 
 struct TestHandler {}
@@ -38,7 +41,7 @@ impl Handler<EmptyState> for TestHandler {
             status_code: 200,
             content_type: Some("application/json".to_string()),
             body: "Ok".to_string().into_bytes(),
-            headers: HashMap::new()
+            headers: HashMap::new(),
         })
     }
 }
@@ -50,7 +53,9 @@ fn get_app() -> App<EmptyState> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = env::args().nth(1).unwrap_or_else(|| "127.0.0.1:8880".to_string());
+    let addr = env::args()
+        .nth(1)
+        .unwrap_or_else(|| "127.0.0.1:8880".to_string());
     let addr = addr.parse::<SocketAddr>()?;
 
     get_app().run(addr)?;
@@ -70,6 +75,6 @@ mod tests {
         let response = app.inject(request);
 
         assert_eq!(response.status_code, 200);
-        assert_eq!(response.body, "Ok".as_bytes());
+        assert_eq!(response.body, b"Ok");
     }
 }

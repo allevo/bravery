@@ -1,8 +1,8 @@
-use tokio_io::codec::{Encoder, Decoder};
-use tokio::io;
 use bytes::BytesMut;
 use httparse::Status::{Complete, Partial};
 use std::collections::HashMap;
+use tokio::io;
+use tokio_io::codec::{Decoder, Encoder};
 
 use crate::request::Request;
 use crate::response::Response;
@@ -15,7 +15,7 @@ pub struct Http<T> {
     pub with_headers: bool,
     pub with_query_string: bool,
     pub context: T,
-    pub logger: slog::Logger
+    pub logger: slog::Logger,
 }
 
 impl<T: Clone> Decoder for Http<T> {
@@ -29,7 +29,7 @@ impl<T: Clone> Decoder for Http<T> {
 
         let header_lenght = match headers {
             Complete(hl) => hl,
-            Partial => 0
+            Partial => 0,
         };
         if header_lenght == 0 {
             return Ok(None);
@@ -41,7 +41,11 @@ impl<T: Clone> Decoder for Http<T> {
         let index = url.find('?').or_else(|| Some(url.len())).unwrap();
 
         let path = &url[..index];
-        let query_string = if self.with_query_string && index < url.len() { &url[(index + 1)..] } else { "" };
+        let query_string = if self.with_query_string && index < url.len() {
+            &url[(index + 1)..]
+        } else {
+            ""
+        };
 
         let with_headers = self.with_headers;
 
@@ -55,10 +59,14 @@ impl<T: Clone> Decoder for Http<T> {
         for header in req.headers.iter() {
             let header_name = header.name.to_owned().to_lowercase();
 
-            let with_value = with_headers ||
-                header_name == content_type_header_name ||
-                header_name == content_length_header_name;
-            let header_value = if with_value { Some(String::from_utf8_lossy(header.value).to_string()) } else { None };
+            let with_value = with_headers
+                || header_name == content_type_header_name
+                || header_name == content_length_header_name;
+            let header_value = if with_value {
+                Some(String::from_utf8_lossy(header.value).to_string())
+            } else {
+                None
+            };
             if with_headers {
                 headers.insert(header_name.clone(), header_value.clone().unwrap().clone());
             }
@@ -86,9 +94,12 @@ impl<T: Clone> Decoder for Http<T> {
             header_lenght,
             body: buf.split_to(header_lenght + content_length)[header_lenght..].to_vec(),
             context: self.context.clone(),
-            logger: slog::Logger::new(&self.logger, o!(
-                "reqId" => REQUEST_COUNTER.fetch_add(1, Ordering::SeqCst)
-            )),
+            logger: slog::Logger::new(
+                &self.logger,
+                o!(
+                    "reqId" => REQUEST_COUNTER.fetch_add(1, Ordering::SeqCst)
+                ),
+            ),
         };
 
         Ok(Some(request))
@@ -99,7 +110,6 @@ impl<T: Clone> Encoder for Http<T> {
     type Item = Response;
     type Error = io::Error;
 
-
     fn encode(&mut self, response: Response, buf: &mut BytesMut) -> io::Result<()> {
         let body = response.body;
         let len = body.len().to_string();
@@ -107,9 +117,12 @@ impl<T: Clone> Encoder for Http<T> {
             Some(ct) => "\r\nContent-type: ".to_owned() + &ct,
             None => "".to_owned(),
         };
-        let output = "HTTP/1.1 ".to_owned() + &response.status_code.to_string()[..] + " OK"
+        let output = "HTTP/1.1 ".to_owned()
+            + &response.status_code.to_string()[..]
+            + " OK"
             + "\r\n"
-            + "Content-length:" + &len[..]
+            + "Content-length:"
+            + &len[..]
             + &content_type
             + "\r\n"
             + "\r\n";
@@ -124,11 +137,11 @@ impl<T: Clone> Encoder for Http<T> {
 mod tests {
     use super::*;
 
-    use sloggers::Build;
-    use sloggers::terminal::{TerminalLoggerBuilder, Destination};
+    use sloggers::terminal::{Destination, TerminalLoggerBuilder};
     use sloggers::types::Severity;
+    use sloggers::Build;
 
-    fn get_logger () -> slog::Logger {
+    fn get_logger() -> slog::Logger {
         let mut builder = TerminalLoggerBuilder::new();
         builder.level(Severity::Debug);
         builder.destination(Destination::Stdout);
@@ -211,11 +224,17 @@ mod tests {
         assert_eq!(request.method, "GET");
         assert_eq!(request.content_length, 0);
         assert_eq!(request.content_type, None);
-        assert_eq!(request.headers, [
-            ("accept".to_owned(), "*/*".to_owned()),
-            ("host".to_owned(), "localhost:8880".to_owned()),
-            ("user-agent".to_owned(), "curl/7.54.0".to_owned())
-            ].iter().cloned().collect());
+        assert_eq!(
+            request.headers,
+            [
+                ("accept".to_owned(), "*/*".to_owned()),
+                ("host".to_owned(), "localhost:8880".to_owned()),
+                ("user-agent".to_owned(), "curl/7.54.0".to_owned())
+            ]
+            .iter()
+            .cloned()
+            .collect()
+        );
         assert_eq!(request.body, b"");
         assert_eq!(request.context, 0);
 

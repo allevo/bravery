@@ -1,19 +1,19 @@
 extern crate tokio;
 
-use std::sync::{Arc};
-use regex::Regex;
-use core::hash::Hasher;
 use core::hash::Hash;
+use core::hash::Hasher;
+use regex::Regex;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::io;
 use tokio::net::TcpListener;
 use tokio::prelude::*;
 
-use bravery_router::{create_root_node, find, add, optimize, Node};
+use bravery_router::{add, create_root_node, find, optimize, Node};
 
 use std::net::SocketAddr;
-use tokio_codec::Framed;
 use std::str;
+use tokio_codec::Framed;
 
 #[macro_use]
 extern crate slog;
@@ -22,17 +22,17 @@ extern crate sloggers;
 #[macro_use]
 extern crate serde_derive;
 
-use sloggers::Build;
-use sloggers::terminal::{TerminalLoggerBuilder, Destination};
+use sloggers::terminal::{Destination, TerminalLoggerBuilder};
 use sloggers::types::Severity;
+use sloggers::Build;
 
+pub mod http;
 pub mod request;
 pub mod response;
-pub mod http;
 
+pub use self::http::Http;
 pub use self::request::Request;
 pub use self::response::Response;
-pub use self::http::Http;
 
 #[derive(Debug)]
 struct MatchedRouter {
@@ -64,10 +64,7 @@ impl Hash for MatchedRouter {
 
 impl std::fmt::Debug for HttpError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "HTTPError"
-        )
+        write!(f, "HTTPError")
     }
 }
 
@@ -85,7 +82,7 @@ pub struct App<T> {
     not_found: Box<dyn Handler<T> + Send + Sync>,
 }
 
-fn get_logger () -> slog::Logger {
+fn get_logger() -> slog::Logger {
     let mut builder = TerminalLoggerBuilder::new();
     builder.level(Severity::Debug);
     builder.destination(Destination::Stdout);
@@ -133,7 +130,13 @@ impl<T: 'static + Clone + Send + Sync> App<T> {
         resolve(self, request).wait().unwrap()
     }
 
-    pub fn create_request(self: &App<T>, method: &str, path: &str, query_string: &str, body: Vec<u8>) -> Request<T> {
+    pub fn create_request(
+        self: &App<T>,
+        method: &str,
+        path: &str,
+        query_string: &str,
+        body: Vec<u8>,
+    ) -> Request<T> {
         Request {
             path: path.to_owned(),
             method: method.to_owned(),
@@ -144,7 +147,7 @@ impl<T: 'static + Clone + Send + Sync> App<T> {
             headers: HashMap::new(),
             body,
             context: self.context.clone(),
-            logger: self.logger.clone()
+            logger: self.logger.clone(),
         }
     }
 
@@ -166,7 +169,7 @@ impl<T: 'static + Clone + Send + Sync> App<T> {
                     with_headers: false,
                     with_query_string: true,
                     context: app.context.clone(),
-                    logger: app.logger.clone()
+                    logger: app.logger.clone(),
                 };
                 let framed = Framed::new(socket, http);
 
@@ -174,9 +177,8 @@ impl<T: 'static + Clone + Send + Sync> App<T> {
 
                 let app = app.clone();
 
-                let task = tx.send_all(rx.and_then(move |request: Request<T>| {
-                        resolve(&*app, request)
-                    }))
+                let task = tx
+                    .send_all(rx.and_then(move |request: Request<T>| resolve(&*app, request)))
                     .then(|_| future::ok(()));
 
                 tokio::spawn(task)
@@ -195,12 +197,15 @@ impl<T: Clone> Handler<T> for HandlerFor404 {
             status_code: 404,
             content_type: Some("text/html".to_owned()),
             body: "404 Handler".to_owned().into_bytes(),
-            headers: HashMap::new()
+            headers: HashMap::new(),
         })
     }
 }
 
-fn resolve<T: Clone>(app: &App<T>, request: Request<T>) -> impl Future<Item=Response, Error=io::Error> + Send {
+fn resolve<T: Clone>(
+    app: &App<T>,
+    request: Request<T>,
+) -> impl Future<Item = Response, Error = io::Error> + Send {
     let method = &request.method;
     let path = &request.path;
     let (router, handlers) = match method.as_ref() {
@@ -213,23 +218,27 @@ fn resolve<T: Clone>(app: &App<T>, request: Request<T>) -> impl Future<Item=Resp
 
     let func = match state_found.value {
         None => &app.not_found,
-        Some(f) => handlers.get(*f).unwrap()
+        Some(f) => handlers.get(*f).unwrap(),
     };
 
-    future::ok::<Response, io::Error>(func.invoke(request).or_else(|error: HttpError| {
-        println!("ERROR!!");
-        let fallback: Vec<u8> = "Unable to serialize".to_owned().into_bytes();
-        let val: Result<Vec<u8>, _> = serde_json::to_vec(&error);
+    future::ok::<Response, io::Error>(
+        func.invoke(request)
+            .or_else(|error: HttpError| {
+                println!("ERROR!!");
+                let fallback: Vec<u8> = "Unable to serialize".to_owned().into_bytes();
+                let val: Result<Vec<u8>, _> = serde_json::to_vec(&error);
 
-        let body = if val.is_ok() { val.unwrap() } else { fallback };
+                let body = if val.is_ok() { val.unwrap() } else { fallback };
 
-        Ok::<Response, io::Error>(Response {
-            status_code: error.status_code,
-            content_type: Some("text/html".to_owned()),
-            body,
-            headers: HashMap::new()
-        })
-    }).unwrap())
+                Ok::<Response, io::Error>(Response {
+                    status_code: error.status_code,
+                    content_type: Some("text/html".to_owned()),
+                    body,
+                    headers: HashMap::new(),
+                })
+            })
+            .unwrap(),
+    )
 }
 
 pub fn error_500<E>(s: &'static str) -> impl Fn(E) -> HttpError {
@@ -266,14 +275,15 @@ mod tests {
             Ok(Response {
                 status_code: 200,
                 content_type: Some("text/html".to_owned()),
-                body: "MyHandler".as_bytes().to_vec(),
-                headers: HashMap::new()
+                body: b"MyHandler".to_vec(),
+                headers: HashMap::new(),
             })
         }
     }
 
     fn get_app<T: 'static>(t: T) -> App<T>
-        where T: Send + Sync + Clone
+    where
+        T: Send + Sync + Clone,
     {
         let mut app = App::new_with_state(t);
         app.get("/", Box::new(MyHandler {}));
