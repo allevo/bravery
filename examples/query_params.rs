@@ -27,7 +27,7 @@ impl Handler<EmptyState> for TestHandler {
             message: &params.message
         };
 
-        let val = serde_json::to_string(&json).map_err(error_500("Unable to serialize"))?;
+        let val = serde_json::to_vec(&json).map_err(error_500("Unable to serialize"))?;
 
         Ok(Response {
             status_code: 200,
@@ -65,7 +65,7 @@ mod tests {
         let response = app.inject(request);
 
         assert_eq!(response.status_code, 200);
-        assert_eq!(response.body, serde_json::to_string(&JsonStruct { message: "my_message" }).unwrap());
+        assert_eq!(response.body, serde_json::to_vec(&JsonStruct { message: "my_message" }).unwrap());
     }
 
     #[test]
@@ -76,7 +76,7 @@ mod tests {
         let response = app.inject(request);
 
         assert_eq!(response.status_code, 400);
-        assert_eq!(response.body, serde_json::to_string(&HttpError {
+        assert_eq!(response.body, serde_json::to_vec(&HttpError {
             status_code: 400,
             error_message: "Unable to deserialize query_params".to_string(),
             details: "missing field `message`".to_string(),

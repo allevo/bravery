@@ -35,7 +35,7 @@ impl Handler<Arc<Mutex<MyState>>> for TestHandler {
             other_counter: *g
         };
 
-        let val = serde_json::to_string(&json).map_err(error_500("Unable to serialize"))?;
+        let val = serde_json::to_vec(&json).map_err(error_500("Unable to serialize"))?;
 
         Ok(Response {
             status_code: 200,
@@ -81,13 +81,13 @@ mod tests {
 
         assert_eq!(response.status_code, 200);
         let expected = JsonStruct { message: "Hello, World!", other_counter: 1, counter: 1 };
-        assert_eq!(response.body, serde_json::to_string(&expected).unwrap());
+        assert_eq!(response.body, serde_json::to_vec(&expected).unwrap());
 
         let request = app.create_request("GET", "/", "", b"".to_vec());
         let response = app.inject(request);
 
         assert_eq!(response.status_code, 200);
         let expected = JsonStruct { message: "Hello, World!", other_counter: 2, counter: 2 };
-        assert_eq!(response.body, serde_json::to_string(&expected).unwrap());
+        assert_eq!(response.body, serde_json::to_vec(&expected).unwrap());
     }
 }

@@ -37,7 +37,7 @@ impl Handler<EmptyState> for TestHandler {
         Ok(Response {
             status_code: 200,
             content_type: Some("application/json".to_string()),
-            body: "Ok".to_string(),
+            body: "Ok".to_string().into_bytes(),
             headers: HashMap::new()
         })
     }
@@ -70,6 +70,6 @@ mod tests {
         let response = app.inject(request);
 
         assert_eq!(response.status_code, 200);
-        assert_eq!(response.body, "Ok");
+        assert_eq!(response.body, "Ok".as_bytes());
     }
 }

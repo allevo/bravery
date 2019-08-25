@@ -194,7 +194,7 @@ impl<T: Clone> Handler<T> for HandlerFor404 {
         Ok(Response {
             status_code: 404,
             content_type: Some("text/html".to_owned()),
-            body: "404 Handler".to_owned(),
+            body: "404 Handler".to_owned().into_bytes(),
             headers: HashMap::new()
         })
     }
@@ -217,8 +217,9 @@ fn resolve<T: Clone>(app: &App<T>, request: Request<T>) -> impl Future<Item=Resp
     };
 
     future::ok::<Response, io::Error>(func.invoke(request).or_else(|error: HttpError| {
-        let fallback: String = "Unable to serialize".to_owned();
-        let val: Result<String, _> = serde_json::to_string(&error);
+        println!("ERROR!!");
+        let fallback: Vec<u8> = "Unable to serialize".to_owned().into_bytes();
+        let val: Result<Vec<u8>, _> = serde_json::to_vec(&error);
 
         let body = if val.is_ok() { val.unwrap() } else { fallback };
 
@@ -265,7 +266,7 @@ mod tests {
             Ok(Response {
                 status_code: 200,
                 content_type: Some("text/html".to_owned()),
-                body: "MyHandler".to_owned(),
+                body: "MyHandler".as_bytes().to_vec(),
                 headers: HashMap::new()
             })
         }

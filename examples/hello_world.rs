@@ -21,7 +21,7 @@ impl Handler<EmptyState> for TestHandler {
             message: "Hello, World!"
         };
 
-        let val = serde_json::to_string(&json).map_err(error_500("Unable to serialize"))?;
+        let val = serde_json::to_vec(&json).map_err(error_500("Unable to serialize"))?;
 
         Ok(Response {
             status_code: 200,
@@ -59,6 +59,6 @@ mod tests {
         let response = app.inject(request);
 
         assert_eq!(response.status_code, 200);
-        assert_eq!(response.body, serde_json::to_string(&JsonStruct { message: "Hello, World!" }).unwrap());
+        assert_eq!(response.body, serde_json::to_vec(&JsonStruct { message: "Hello, World!" }).unwrap());
     }
 }

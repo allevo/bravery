@@ -112,10 +112,10 @@ impl<T: Clone> Encoder for Http<T> {
             + "Content-length:" + &len[..]
             + &content_type
             + "\r\n"
-            + "\r\n"
-            + &body[..];
+            + "\r\n";
 
         buf.extend_from_slice(output.as_bytes());
+        buf.extend_from_slice(&body[..]);
         Ok(())
     }
 }

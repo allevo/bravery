@@ -29,7 +29,7 @@ impl Handler<EmptyState> for TestHandler {
             message: "Hello, World!".to_string(),
         };
 
-        let val = serde_json::to_string(&json).map_err(error_500("Unable to serialize"))?;
+        let val = serde_json::to_string(&json).map_err(error_500("Unable to serialize"))?.into_bytes();
 
         Ok(Response {
             status_code: 200,
@@ -44,7 +44,7 @@ struct SwaggerHandler {
 }
 impl Handler<EmptyState> for SwaggerHandler {
     fn invoke(&self, _req: Request<EmptyState>) -> Result<Response, HttpError> {
-        let val = serde_json::to_string(&self.swagger_object).map_err(error_500("Unable to serialize"))?;
+        let val = serde_json::to_string(&self.swagger_object).map_err(error_500("Unable to serialize"))?.into_bytes();
 
         Ok(Response {
             status_code: 200,
@@ -90,12 +90,13 @@ impl Handler<EmptyState> for ServeStaticFile {
             },
             None => None,
         };
-        let output = String::from_utf8_lossy(fs::read(request_path).map_err(error_500("Unable to find path"))?.as_slice()).to_string();
+        let bytes = fs::read(request_path).map_err(error_500("Unable to find path"))?;
+        info!(req.logger, "bytes"; "bytes" => bytes.len());
 
         Ok(Response {
             status_code: 200,
             content_type,
-            body: output,
+            body: bytes,
             headers: HashMap::new()
         })
     }
