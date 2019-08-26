@@ -26,6 +26,7 @@ serde_urlencoded = "0.6.1"
 bravery_router = "0.1"
 sloggers = "0.3.3"
 slog = "2.5.2"
+percent-encoding = "2.1.0"
 
 [dev-dependencies]
 struct2swagger = { path = "../swagger/struct2swagger" }

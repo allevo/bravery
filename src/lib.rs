@@ -153,7 +153,6 @@ impl<T: 'static + Clone + Send + Sync> App<T> {
 
     pub fn run(mut self: App<T>, addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
         let socket = TcpListener::bind(&addr)?;
-        println!("Listening on: {}", addr);
 
         self.post_router = optimize(self.post_router);
         self.get_router = optimize(self.get_router);
@@ -202,6 +201,8 @@ impl<T: Clone> Handler<T> for HandlerFor404 {
     }
 }
 
+use percent_encoding::percent_decode_str;
+
 fn resolve<T: Clone>(
     app: &App<T>,
     request: Request<T>,
@@ -214,7 +215,8 @@ fn resolve<T: Clone>(
         _ => unimplemented!(),
     };
 
-    let state_found = find(router, path);
+    let path = percent_decode_str(path).decode_utf8_lossy();
+    let state_found = find(router, &path);
 
     let func = match state_found.value {
         None => &app.not_found,
@@ -224,7 +226,6 @@ fn resolve<T: Clone>(
     future::ok::<Response, io::Error>(
         func.invoke(request)
             .or_else(|error: HttpError| {
-                println!("ERROR!!");
                 let fallback: Vec<u8> = "Unable to serialize".to_owned().into_bytes();
                 let val: Result<Vec<u8>, _> = serde_json::to_vec(&error);
 
@@ -287,6 +288,7 @@ mod tests {
     {
         let mut app = App::new_with_state(t);
         app.get("/", Box::new(MyHandler {}));
+        app.get("/the name/:name", Box::new(MyHandler {}));
         app
     }
 
@@ -301,5 +303,22 @@ mod tests {
         let request = app.create_request("GET", "/unknwon-path", "", b"".to_vec());
         let response = app.inject(request);
         assert_eq!(response.status_code, 404);
+    }
+
+    #[test]
+    fn encoded() {
+        let app = get_app(0);
+
+        let request = app.create_request("GET", "/", "", b"".to_vec());
+        let response = app.inject(request);
+        assert_eq!(response.status_code, 200);
+
+        let request = app.create_request("GET", "/the name/Tommaso Allevi", "", b"".to_vec());
+        let response = app.inject(request);
+        assert_eq!(response.status_code, 200);
+
+        let request = app.create_request("GET", "/the%20name/Tommaso Allevi", "", b"".to_vec());
+        let response = app.inject(request);
+        assert_eq!(response.status_code, 200);
     }
 }
