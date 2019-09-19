@@ -1,6 +1,6 @@
 #![warn(rust_2018_idioms)]
 
-extern crate tokio;
+use tokio;
 // extern crate tokio_signal;
 
 use core::hash::Hash;
@@ -22,7 +22,6 @@ use tokio::{
 
 #[macro_use]
 extern crate slog;
-extern crate sloggers;
 
 #[macro_use]
 extern crate serde_derive;
@@ -70,7 +69,7 @@ impl Hash for MatchedRouter {
 }
 
 impl std::fmt::Debug for HttpError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "HTTPError")
     }
 }
@@ -190,10 +189,7 @@ impl<T: Clone + Send + Sync + Unpin> App<T> {
     pub fn run(mut self: App<T>, addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
-            let mut incoming = TcpListener::bind(&addr);
-            let mut incoming = incoming.await;
-            let mut incoming = incoming?;
-            let mut incoming = incoming.incoming();
+            let mut incoming = TcpListener::bind(&addr).await?.incoming();
 
             self.post_router = optimize(self.post_router);
             self.get_router = optimize(self.get_router);
