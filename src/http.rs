@@ -1,8 +1,8 @@
 use bytes::BytesMut;
 use httparse::Status::{Complete, Partial};
 use std::collections::HashMap;
-use tokio::io;
-use tokio_io::codec::{Decoder, Encoder};
+use std::io;
+use tokio::codec::{Decoder, Encoder};
 
 use crate::request::Request;
 use crate::response::Response;
@@ -11,21 +11,32 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 static REQUEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-pub struct Http<T> {
+#[derive(Clone)]
+pub struct HttpCodec<T: Clone + Sync + Send> {
     pub with_headers: bool,
     pub with_query_string: bool,
-    pub context: T,
     pub logger: slog::Logger,
+    pub context: T,
 }
 
-impl<T: Clone> Decoder for Http<T> {
+impl<T: Clone + Send + Sync> Decoder for HttpCodec<T> {
     type Item = Request<T>;
     type Error = io::Error;
 
     fn decode(&mut self, buf: &mut BytesMut) -> io::Result<Option<Request<T>>> {
         let mut headers = [httparse::EMPTY_HEADER; 16];
         let mut req = httparse::Request::new(&mut headers);
-        let headers = req.parse(buf).unwrap();
+
+        let headers = req.parse(buf);
+
+        if headers.is_err() {
+            match headers {
+                Err(e) => println!("AAAAAA {}", e),
+                _ => unreachable!(),
+            }
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, "AAA"));
+        }
+        let headers = headers.unwrap();
 
         let header_lenght = match headers {
             Complete(hl) => hl,
@@ -93,20 +104,20 @@ impl<T: Clone> Decoder for Http<T> {
             content_length,
             header_lenght,
             body: buf.split_to(header_lenght + content_length)[header_lenght..].to_vec(),
-            context: self.context.clone(),
             logger: slog::Logger::new(
                 &self.logger,
                 o!(
                     "reqId" => REQUEST_COUNTER.fetch_add(1, Ordering::SeqCst)
                 ),
             ),
+            context: self.context.clone(),
         };
 
         Ok(Some(request))
     }
 }
 
-impl<T: Clone> Encoder for Http<T> {
+impl<T: Clone + Send + Sync> Encoder for HttpCodec<T> {
     type Item = Response;
     type Error = io::Error;
 
@@ -117,9 +128,12 @@ impl<T: Clone> Encoder for Http<T> {
             Some(ct) => "\r\nContent-type: ".to_owned() + &ct,
             None => "".to_owned(),
         };
-        let output = "HTTP/1.1 ".to_owned()
-            + &response.status_code.to_string()[..]
+        let output = "HTTP/1.0 ".to_owned()
+            // + &response.status_code.to_string()[..]
+            + "200"
             + " OK"
+            + "\r\n"
+            + "Connection: Close"
             + "\r\n"
             + "Content-length:"
             + &len[..]
@@ -153,11 +167,11 @@ mod tests {
         let mut input = BytesMut::new();
         input.extend_from_slice(b"GET / HTTP/1.1\r\nHost: localhost:8880\r\nUser-Agent: curl/7.54.0\r\nAccept: */*\r\n\r\n");
 
-        let mut http = Http {
+        let mut http = HttpCodec {
             with_headers: false,
             with_query_string: false,
-            context: 0,
             logger: get_logger(),
+            context: 0,
         };
         let request = http.decode(&mut input);
 
@@ -170,7 +184,7 @@ mod tests {
         assert_eq!(request.content_type, None);
         assert_eq!(request.headers, HashMap::new());
         assert_eq!(request.body, b"");
-        assert_eq!(request.context, 0);
+        // assert_eq!(request.context, Arc::new(0));
 
         let empty_vec: Vec<u8> = Vec::new();
         assert_eq!(input.to_vec(), empty_vec);
@@ -181,11 +195,11 @@ mod tests {
         let mut input = BytesMut::new();
         input.extend_from_slice(b"POST / HTTP/1.1\r\nHost: localhost:8880\r\nUser-Agent: curl/7.54.0\r\nAccept: */*\r\nContent-type: application/json\r\nContent-Length: 16\r\n\r\n{\"message\":\"aa\"}");
 
-        let mut http = Http {
+        let mut http = HttpCodec {
             with_headers: false,
             with_query_string: false,
-            context: 0,
             logger: get_logger(),
+            context: 0,
         };
         let request = http.decode(&mut input);
 
@@ -198,7 +212,7 @@ mod tests {
         assert_eq!(request.content_type, Some("application/json".to_owned()));
         assert_eq!(request.headers, HashMap::new());
         assert_eq!(request.body, b"{\"message\":\"aa\"}");
-        assert_eq!(request.context, 0);
+        // assert_eq!(request.context, Arc::new(0));
 
         let empty_vec: Vec<u8> = Vec::new();
         assert_eq!(input.to_vec(), empty_vec);
@@ -209,11 +223,11 @@ mod tests {
         let mut input = BytesMut::new();
         input.extend_from_slice(b"GET / HTTP/1.1\r\nHost: localhost:8880\r\nUser-Agent: curl/7.54.0\r\nAccept: */*\r\n\r\n");
 
-        let mut http = Http {
+        let mut http = HttpCodec {
             with_headers: true,
             with_query_string: false,
-            context: 0,
             logger: get_logger(),
+            context: 0,
         };
         let request = http.decode(&mut input);
 
@@ -236,7 +250,7 @@ mod tests {
             .collect()
         );
         assert_eq!(request.body, b"");
-        assert_eq!(request.context, 0);
+        // assert_eq!(request.context, Arc::new(0));
 
         let empty_vec: Vec<u8> = Vec::new();
         assert_eq!(input.to_vec(), empty_vec);
@@ -247,11 +261,11 @@ mod tests {
         let mut input = BytesMut::new();
         input.extend_from_slice(b"GET /?key1=value1&key2=value2 HTTP/1.1\r\nHost: localhost:8880\r\nUser-Agent: curl/7.54.0\r\nAccept: */*\r\n\r\n");
 
-        let mut http = Http {
+        let mut http = HttpCodec {
             with_headers: false,
             with_query_string: true,
-            context: 0,
             logger: get_logger(),
+            context: 0,
         };
         let request = http.decode(&mut input);
 
@@ -265,7 +279,7 @@ mod tests {
         assert_eq!(request.content_type, None);
         assert_eq!(request.headers, HashMap::new());
         assert_eq!(request.body, b"");
-        assert_eq!(request.context, 0);
+        // assert_eq!(request.context, Arc::new(0));
 
         let empty_vec: Vec<u8> = Vec::new();
         assert_eq!(input.to_vec(), empty_vec);

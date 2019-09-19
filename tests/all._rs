@@ -1,0 +1,94 @@
+use std::net::SocketAddr;
+
+use bravery::{error_500, App, EmptyState, Handler, HttpError, Request, Response};
+use std::collections::HashMap;
+
+extern crate serde;
+extern crate serde_json;
+
+#[macro_use]
+extern crate serde_derive;
+
+use std::io::prelude::*;
+use std::net::TcpStream;
+
+#[derive(Serialize)]
+struct JsonStruct<'a> {
+    message: &'a str,
+}
+
+#[derive(Clone)]
+struct TestHandler {}
+impl Handler<EmptyState> for TestHandler {
+    fn invoke(&self, _req: Request<EmptyState>) -> Result<Response, HttpError> {
+        let json = JsonStruct {
+            message: "Hello, World!",
+        };
+
+        let val = serde_json::to_vec(&json).map_err(error_500("Unable to serialize"))?;
+
+        Ok(Response {
+            status_code: 200,
+            content_type: Some("application/json".to_string()),
+            body: val,
+            headers: HashMap::new(),
+        })
+    }
+}
+
+fn get_app() -> App<EmptyState> {
+    let mut app: App<EmptyState> = Default::default();
+    app.get("/", Box::new(TestHandler {}));
+    app
+}
+
+// #[test]
+fn all() {
+    let addr = "127.0.0.1:8880".to_string();
+    let addr = addr.parse::<SocketAddr>().unwrap();
+
+    let app = get_app();
+    let thread = std::thread::spawn(move || {
+        println!("Running");
+        app.run(addr).unwrap();
+    });
+
+    std::thread::sleep(std::time::Duration::from_secs(1));
+
+    println!("Creating");
+    let mut stream = TcpStream::connect("127.0.0.1:8880").unwrap();
+    println!("Wrinting");
+    stream
+        .write(b"GET / HTTP/1.0\r\nHost: 127.0.0.1:8880\r\nUser-Agent: ApacheBench/2.3\r\nAccept: */*\r\n\r\n")
+        .unwrap();
+
+    std::thread::sleep(std::time::Duration::from_secs(1));
+
+    println!("Reading");
+    let mut resp = [0; 128];
+    stream.read(&mut resp).unwrap();
+
+    println!("READ: {}", String::from_utf8_lossy(&resp));
+
+    println!("Shutting client down");
+    stream.shutdown(std::net::Shutdown::Both).unwrap();
+
+    println!("Shutting server down");
+    // app.shutdown();
+
+    println!("Joining");
+    thread.join();
+    /*
+    let request = app.create_request("GET", "/", "", b"".to_vec());
+    let response = app.inject(request);
+
+    assert_eq!(response.status_code, 200);
+    assert_eq!(
+        response.body,
+        serde_json::to_vec(&JsonStruct {
+            message: "Hello, World!"
+        })
+        .unwrap()
+    );
+    */
+}

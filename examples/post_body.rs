@@ -20,6 +20,7 @@ struct MyBody<'a> {
     pub message: &'a str,
 }
 
+#[derive(Clone)]
 struct TestHandler {}
 impl Handler<EmptyState> for TestHandler {
     fn invoke(&self, req: Request<EmptyState>) -> Result<Response, HttpError> {

@@ -1,19 +1,24 @@
+#![warn(rust_2018_idioms)]
+
 extern crate tokio;
+// extern crate tokio_signal;
 
 use core::hash::Hash;
 use core::hash::Hasher;
 use regex::Regex;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::io;
-use tokio::net::TcpListener;
-use tokio::prelude::*;
 
 use bravery_router::{add, create_root_node, find, optimize, Node};
 
+use objekt;
 use std::net::SocketAddr;
 use std::str;
-use tokio_codec::Framed;
+use tokio::prelude::*;
+use tokio::{
+    codec::Framed,
+    net::{tcp::TcpStream, TcpListener},
+};
 
 #[macro_use]
 extern crate slog;
@@ -26,11 +31,13 @@ use sloggers::terminal::{Destination, TerminalLoggerBuilder};
 use sloggers::types::Severity;
 use sloggers::Build;
 
+use futures::executor::block_on;
+
 pub mod http;
 pub mod request;
 pub mod response;
 
-pub use self::http::Http;
+pub use self::http::HttpCodec;
 pub use self::request::Request;
 pub use self::response::Response;
 
@@ -68,18 +75,47 @@ impl std::fmt::Debug for HttpError {
     }
 }
 
-pub trait Handler<T: Clone> {
+pub trait Handler<T: Clone + Send + Sync>: objekt::Clone + Sync + Send {
     fn invoke(&self, req: Request<T>) -> Result<Response, HttpError>;
 }
+objekt::clone_trait_object!(<T: Clone + Send + Sync> Handler<T>);
 
-pub struct App<T> {
+async fn process_socket<T: Clone + Sync + Send + Unpin>(
+    app: Arc<App<T>>,
+    socket: TcpStream,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut framed = Framed::<TcpStream, HttpCodec<T>>::new(
+        socket,
+        HttpCodec {
+            logger: app.logger.clone(),
+            with_headers: true,
+            with_query_string: true,
+            context: app.context.clone(),
+        },
+    );
+
+    while let Some(request) = framed.next().await {
+        match request {
+            Ok(request) => {
+                let response = resolve(&app, request).await?;
+                framed.send(response).await?;
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Clone)]
+pub struct App<T: 'static + Clone + Sync + Send> {
     get_router: Node<usize>,
-    get_handlers: Vec<Box<dyn Handler<T> + Send + Sync>>,
+    get_handlers: Vec<Box<dyn Handler<T>>>,
     post_router: Node<usize>,
-    post_handlers: Vec<Box<dyn Handler<T> + Send + Sync>>,
-    context: T,
+    post_handlers: Vec<Box<dyn Handler<T>>>,
     logger: slog::Logger,
-    not_found: Box<dyn Handler<T> + Send + Sync>,
+    context: T,
+    not_found: Box<dyn Handler<T>>,
 }
 
 fn get_logger() -> slog::Logger {
@@ -90,44 +126,44 @@ fn get_logger() -> slog::Logger {
 }
 
 impl Default for App<EmptyState> {
-    fn default() -> App<EmptyState> {
+    fn default() -> Self {
         App {
             get_router: create_root_node(),
             get_handlers: vec![],
             post_router: create_root_node(),
             post_handlers: vec![],
-            context: EmptyState {},
             logger: get_logger(),
+            context: EmptyState {},
             not_found: Box::new(HandlerFor404 {}),
         }
     }
 }
 
-impl<T: 'static + Clone + Send + Sync> App<T> {
-    pub fn new_with_state(context: T) -> App<T> {
+impl<T: Clone + Send + Sync + Unpin> App<T> {
+    pub fn new_with_state(t: T) -> Self {
         App {
             get_router: create_root_node(),
             get_handlers: vec![],
             post_router: create_root_node(),
             post_handlers: vec![],
-            context,
             logger: get_logger(),
+            context: t,
             not_found: Box::new(HandlerFor404 {}),
         }
     }
 
-    pub fn get(self: &mut App<T>, path: &str, handler: Box<dyn Handler<T> + Send + Sync>) {
+    pub fn get(self: &mut App<T>, path: &str, handler: Box<dyn Handler<T>>) {
         add(&mut self.get_router, path, self.get_handlers.len());
         self.get_handlers.push(handler);
     }
 
-    pub fn post(self: &mut App<T>, path: &str, handler: Box<dyn Handler<T> + Send + Sync>) {
+    pub fn post(self: &mut App<T>, path: &str, handler: Box<dyn Handler<T>>) {
         add(&mut self.post_router, path, self.post_handlers.len());
         self.post_handlers.push(handler);
     }
 
     pub fn inject(self: &App<T>, request: Request<T>) -> Response {
-        resolve(self, request).wait().unwrap()
+        block_on(resolve(self, request)).unwrap()
     }
 
     pub fn create_request(
@@ -146,51 +182,41 @@ impl<T: 'static + Clone + Send + Sync> App<T> {
             query_string: query_string.to_owned(),
             headers: HashMap::new(),
             body,
-            context: self.context.clone(),
             logger: self.logger.clone(),
+            context: self.context.clone(),
         }
     }
 
     pub fn run(mut self: App<T>, addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
-        let socket = TcpListener::bind(&addr)?;
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let mut incoming = TcpListener::bind(&addr);
+            let mut incoming = incoming.await;
+            let mut incoming = incoming?;
+            let mut incoming = incoming.incoming();
 
-        self.post_router = optimize(self.post_router);
-        self.get_router = optimize(self.get_router);
+            self.post_router = optimize(self.post_router);
+            self.get_router = optimize(self.get_router);
 
-        let app = Arc::new(self);
+            let app = Arc::new(self);
 
-        let done = socket
-            .incoming()
-            .map_err(|e| println!("failed to accept socket; error = {:?}", e))
-            .for_each(move |socket| {
-                // TODO: clone this
-                let http: Http<T> = Http {
-                    with_headers: false,
-                    with_query_string: true,
-                    context: app.context.clone(),
-                    logger: app.logger.clone(),
-                };
-                let framed = Framed::new(socket, http);
-
-                let (tx, rx) = framed.split();
-
+            while let Some(Ok(stream)) = incoming.next().await {
                 let app = app.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = process_socket(app, stream).await {
+                        println!("failed to process connection; error = {}", e);
+                    }
+                });
+            }
 
-                let task = tx
-                    .send_all(rx.and_then(move |request: Request<T>| resolve(&*app, request)))
-                    .then(|_| future::ok(()));
-
-                tokio::spawn(task)
-            });
-
-        tokio::run(done);
-
-        Ok(())
+            Ok(())
+        })
     }
 }
 
+#[derive(Clone)]
 struct HandlerFor404 {}
-impl<T: Clone> Handler<T> for HandlerFor404 {
+impl<T: Clone + Sync + Send> Handler<T> for HandlerFor404 {
     fn invoke(&self, _req: Request<T>) -> Result<Response, HttpError> {
         Ok(Response {
             status_code: 404,
@@ -203,13 +229,13 @@ impl<T: Clone> Handler<T> for HandlerFor404 {
 
 use percent_encoding::percent_decode_str;
 
-fn resolve<T: Clone>(
+async fn resolve<T: Clone + Sync + Send + Unpin>(
     app: &App<T>,
     request: Request<T>,
-) -> impl Future<Item = Response, Error = io::Error> + Send {
+) -> Result<Response, Box<dyn std::error::Error>> {
     let method = &request.method;
     let path = &request.path;
-    let (router, handlers) = match method.as_ref() {
+    let (router, handlers): (&Node<usize>, &Vec<Box<dyn Handler<T>>>) = match method.as_ref() {
         "GET" => (&app.get_router, &app.get_handlers),
         "POST" => (&app.post_router, &app.post_handlers),
         _ => unimplemented!(),
@@ -223,23 +249,19 @@ fn resolve<T: Clone>(
         Some(f) => handlers.get(*f).unwrap(),
     };
 
-    future::ok::<Response, io::Error>(
-        func.invoke(request)
-            .or_else(|error: HttpError| {
-                let fallback: Vec<u8> = "Unable to serialize".to_owned().into_bytes();
-                let val: Result<Vec<u8>, _> = serde_json::to_vec(&error);
+    func.invoke(request).or_else(|error: HttpError| {
+        let fallback: Vec<u8> = "Unable to serialize".to_owned().into_bytes();
+        let val: Result<Vec<u8>, _> = serde_json::to_vec(&error);
 
-                let body = if val.is_ok() { val.unwrap() } else { fallback };
+        let body = if let Ok(v) = val { v } else { fallback };
 
-                Ok::<Response, io::Error>(Response {
-                    status_code: error.status_code,
-                    content_type: Some("text/html".to_owned()),
-                    body,
-                    headers: HashMap::new(),
-                })
-            })
-            .unwrap(),
-    )
+        Ok::<Response, Box<dyn std::error::Error>>(Response {
+            status_code: error.status_code,
+            content_type: Some("text/html".to_owned()),
+            body,
+            headers: HashMap::new(),
+        })
+    })
 }
 
 pub fn error_500<E>(s: &'static str) -> impl Fn(E) -> HttpError {
@@ -270,8 +292,9 @@ pub struct EmptyState;
 mod tests {
     use super::*;
 
+    #[derive(Clone)]
     struct MyHandler {}
-    impl<T: Clone> Handler<T> for MyHandler {
+    impl<T: Clone + Sync + Send> Handler<T> for MyHandler {
         fn invoke(&self, _req: Request<T>) -> Result<Response, HttpError> {
             Ok(Response {
                 status_code: 200,
@@ -282,11 +305,8 @@ mod tests {
         }
     }
 
-    fn get_app<T: 'static>(t: T) -> App<T>
-    where
-        T: Send + Sync + Clone,
-    {
-        let mut app = App::new_with_state(t);
+    fn get_app() -> App<EmptyState> {
+        let mut app = App::default();
         app.get("/", Box::new(MyHandler {}));
         app.get("/the name/:name", Box::new(MyHandler {}));
         app
@@ -294,7 +314,7 @@ mod tests {
 
     #[test]
     fn dispatch_requests() {
-        let app = get_app(0);
+        let app = get_app();
 
         let request = app.create_request("GET", "/", "", b"".to_vec());
         let response = app.inject(request);
@@ -307,7 +327,7 @@ mod tests {
 
     #[test]
     fn encoded() {
-        let app = get_app(0);
+        let app = get_app();
 
         let request = app.create_request("GET", "/", "", b"".to_vec());
         let response = app.inject(request);

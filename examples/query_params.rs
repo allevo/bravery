@@ -19,6 +19,7 @@ struct MyParams {
     pub message: String,
 }
 
+#[derive(Clone)]
 struct TestHandler {}
 impl Handler<EmptyState> for TestHandler {
     fn invoke(&self, req: Request<EmptyState>) -> Result<Response, HttpError> {

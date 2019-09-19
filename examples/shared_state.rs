@@ -19,8 +19,9 @@ struct JsonStruct<'a> {
     other_counter: u32,
 }
 
+#[derive(Clone)]
 struct TestHandler {
-    other_counter: Mutex<u32>,
+    other_counter: Arc<Mutex<u32>>,
 }
 impl Handler<Arc<Mutex<MyState>>> for TestHandler {
     fn invoke(&self, req: Request<Arc<Mutex<MyState>>>) -> Result<Response, HttpError> {
@@ -63,7 +64,7 @@ fn get_app() -> App<Arc<Mutex<MyState>>> {
     app.get(
         "/",
         Box::new(TestHandler {
-            other_counter: Mutex::new(0),
+            other_counter: Arc::new(Mutex::new(0)),
         }),
     );
     app

@@ -15,6 +15,7 @@ struct JsonStruct<'a> {
     message: &'a str,
 }
 
+#[derive(Clone)]
 struct TestHandler {}
 impl Handler<EmptyState> for TestHandler {
     fn invoke(&self, _req: Request<EmptyState>) -> Result<Response, HttpError> {

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-pub struct Request<T: Clone> {
+pub struct Request<C: Clone + Sync + Send> {
     pub method: String,
     pub path: String,
     pub query_string: String,
@@ -9,11 +9,11 @@ pub struct Request<T: Clone> {
     pub content_length: usize,
     pub header_lenght: usize,
     pub body: Vec<u8>,
-    pub context: T,
     pub logger: slog::Logger,
+    pub context: C,
 }
 
-impl<C: Clone> Request<C> {
+impl<C: Clone + Sync + Send> Request<C> {
     pub fn body_as<'a, T>(&'a self) -> serde_json::Result<T>
     where
         T: serde::de::Deserialize<'a>,
