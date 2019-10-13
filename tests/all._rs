@@ -42,7 +42,7 @@ fn get_app() -> App<EmptyState> {
     app
 }
 
-// #[test]
+#[test]
 fn all() {
     let addr = "127.0.0.1:8880".to_string();
     let addr = addr.parse::<SocketAddr>().unwrap();
@@ -74,7 +74,7 @@ fn all() {
     stream.shutdown(std::net::Shutdown::Both).unwrap();
 
     println!("Shutting server down");
-    // app.shutdown();
+    app.shutdown();
 
     println!("Joining");
     thread.join();

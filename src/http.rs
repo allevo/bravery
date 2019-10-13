@@ -30,11 +30,7 @@ impl<T: Clone + Send + Sync> Decoder for HttpCodec<T> {
         let headers = req.parse(buf);
 
         if headers.is_err() {
-            match headers {
-                Err(e) => println!("AAAAAA {}", e),
-                _ => unreachable!(),
-            }
-            return Err(std::io::Error::new(std::io::ErrorKind::Other, "AAA"));
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, "Unable to parse HTTP headers"));
         }
         let headers = headers.unwrap();
 
@@ -121,19 +117,20 @@ impl<T: Clone + Send + Sync> Encoder for HttpCodec<T> {
     type Item = Response;
     type Error = io::Error;
 
-    fn encode(&mut self, response: Response, buf: &mut BytesMut) -> io::Result<()> {
+    fn encode(&mut self, mut response: Response, buf: &mut BytesMut) -> io::Result<()> {
+        response.body.push(b'\n');
         let body = response.body;
         let len = body.len().to_string();
         let content_type = match response.content_type {
             Some(ct) => "\r\nContent-type: ".to_owned() + &ct,
             None => "".to_owned(),
         };
-        let output = "HTTP/1.0 ".to_owned()
+        let output = "HTTP/1.1 ".to_owned()
             // + &response.status_code.to_string()[..]
             + "200"
             + " OK"
             + "\r\n"
-            + "Connection: Close"
+            + "Connection: keep-alive"
             + "\r\n"
             + "Content-length:"
             + &len[..]

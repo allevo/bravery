@@ -99,7 +99,13 @@ async fn process_socket<T: Clone + Sync + Send + Unpin>(
                 let response = resolve(&app, request).await?;
                 framed.send(response).await?;
             }
-            Err(e) => return Err(e.into()),
+            Err(e) => {
+                // Connection reset by peer
+                if e.raw_os_error() == Some(54) {
+                    return Ok(())
+                }
+                return Err(e.into())
+            },
         }
     }
 
@@ -195,7 +201,6 @@ impl<T: Clone + Send + Sync + Unpin> App<T> {
             self.get_router = optimize(self.get_router);
 
             let app = Arc::new(self);
-
             while let Some(Ok(stream)) = incoming.next().await {
                 let app = app.clone();
                 tokio::spawn(async move {
