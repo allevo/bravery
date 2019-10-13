@@ -1,6 +1,6 @@
 [package]
 name = "bravery"
-version = "0.3.0"
+version = "0.3.1-alpha.0"
 authors = ["Tommaso Allevi <tomallevi@gmail.com>"]
 edition = "2018"
 description = "A fast http async web server"
